@@ -17,6 +17,22 @@ import { frequentQuestions, todayStr, uid } from '@/src/utils';
 import { DateInput } from '@/src/components/DateInput';
 import { StarRating } from '@/src/components/StarRating';
 import { Card, Chips, FormInput, FormLabel, SectionTitle } from '@/src/components/ui';
+import { mergeFormEdit } from '@/src/sync/formMerge';
+
+/** 保存時に他端末の変更とマージする項目 */
+const REVIEW_FIELD_LABELS = {
+  result: '選考結果', date: '面接日', time: '面接時間', format: '面接形式', interviewerCount: '面接官人数',
+  questions: '聞かれた質問', answerNotes: '自分の回答', goodPoints: 'うまく答えられたこと',
+  stuckPoints: '詰まった質問', positiveReactions: '面接官の反応が良かった話', improvements: '改善点',
+  ratings: '自己評価',
+} as const;
+const REVIEW_KEYS = Object.keys(REVIEW_FIELD_LABELS) as (keyof typeof REVIEW_FIELD_LABELS)[];
+
+/** 振り返りが無かったときの初期値（別の端末で先に作られた場合の比較用） */
+const EMPTY_REVIEW_FIELDS = {
+  result: 'pending', date: '', time: '', format: '', interviewerCount: 0, questions: [],
+  answerNotes: '', goodPoints: '', stuckPoints: '', positiveReactions: '', improvements: '', ratings: {},
+} satisfies Omit<SelectionReview, 'updatedAt'>;
 
 const COMMON_QUESTIONS = ['自己紹介', 'ガクチカ', '自己PR', '志望動機', '長所・短所', '逆質問'];
 
@@ -35,7 +51,8 @@ function ReviewForm() {
 
   const company = companies.find((c) => c.id === cid);
   const selection = company?.flows.find((f) => f.id === sid);
-  const r = selection?.review;
+  // フォームを開いた時点の振り返り（保存時に、他端末での変更と区別するために使う）
+  const [r] = useState(() => selection?.review);
 
   const [result, setResult] = useState<ReviewResult>(r?.result ?? 'pending');
   const [date, setDate] = useState(r?.date ?? selection?.date ?? todayStr());
@@ -75,21 +92,41 @@ function ReviewForm() {
     setQuestions((prev) => prev.filter((q) => q.id !== id));
 
   const handleSave = async () => {
-    const review: SelectionReview = {
+    const edited: SelectionReview = {
       result, date, time, format, interviewerCount,
       questions: questions.filter((q) => q.text.trim()),
       answerNotes, goodPoints, stuckPoints, positiveReactions, improvements, ratings,
       updatedAt: new Date().toISOString(),
     };
-    // 結果が確定したら選考ステータスにも反映
-    const status = result === 'pending' ? selection.status : result;
-    await updateSelection(company.id, selection.id, { review, status });
 
-    const next = company.flows[company.flows.findIndex((f) => f.id === selection.id) + 1];
-    if (next && result === 'passed' && (improvements.trim() || positiveReactions.trim() || stuckPoints.trim())) {
-      Alert.alert('保存しました', `この振り返りは「${next.name}」に引き継がれます。`);
-    }
-    router.back();
+    const save = async (review: SelectionReview) => {
+      // 結果が確定したら選考ステータスにも反映
+      const status = review.result === 'pending' ? selection.status : review.result;
+      await updateSelection(company.id, selection.id, { review: { ...review, updatedAt: edited.updatedAt }, status });
+
+      const next = company.flows[company.flows.findIndex((f) => f.id === selection.id) + 1];
+      if (next && review.result === 'passed'
+        && (review.improvements.trim() || review.positiveReactions.trim() || review.stuckPoints.trim())) {
+        Alert.alert('保存しました', `この振り返りは「${next.name}」に引き継がれます。`);
+      }
+      router.back();
+    };
+
+    // 開いている間に別の端末で振り返りが保存されていたら、変更した項目だけを重ねる
+    const latest = selection.review;
+    if (!latest) return save(edited);
+    const initial: SelectionReview = r ?? { ...latest, ...EMPTY_REVIEW_FIELDS };
+    const m = mergeFormEdit(initial, edited, latest, REVIEW_KEYS);
+    if (m.conflicts.length === 0) return save(m.merged);
+    Alert.alert(
+      '別の端末でこのデータが更新されています',
+      `この画面を開いた後に、次の項目が別の端末で変更されました。\n\n${m.conflicts.map((k) => `・${REVIEW_FIELD_LABELS[k]}`).join('\n')}`,
+      [
+        { text: 'キャンセル', style: 'cancel' },
+        { text: '別の端末の内容を残す', onPress: () => save(m.keepLatest) },
+        { text: 'この端末の内容で上書き', style: 'destructive', onPress: () => save(m.merged) },
+      ],
+    );
   };
 
   return (
@@ -164,6 +201,7 @@ function ReviewForm() {
                     onChangeText={(v) => updateQuestion(q.id, { text: v })}
                     placeholder="質問内容"
                     placeholderTextColor={colors.fgSub}
+                    maxLength={1000}
                   />
                   <TouchableOpacity onPress={() => removeQuestion(q.id)} style={{ padding: 4 }}>
                     <Ionicons name="close-circle" size={22} color={colors.fgSub} />

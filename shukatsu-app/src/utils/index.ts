@@ -4,9 +4,9 @@ import {
 } from '../types';
 import { EVAL_KEYS, SELF_RATING_LABELS } from '../constants';
 
-/** ユニークID生成 */
+/** ユニークID生成（オフラインでも複数端末で衝突しないよう、時刻 + 十分な長さの乱数） */
 export function uid(): string {
-  return Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+  return Date.now().toString(36) + Math.random().toString(36).slice(2, 12).padEnd(10, '0');
 }
 
 /** Date → YYYY-MM-DD（端末のローカル日付。toISOString は UTC なので朝9時前に前日になる） */

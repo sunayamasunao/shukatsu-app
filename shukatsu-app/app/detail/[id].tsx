@@ -6,7 +6,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useCompanies } from '@/src/context/CompaniesContext';
 import { Colors, radius, shadow, spacing } from '@/src/theme';
 import { useTheme, useThemedStyles } from '@/src/context/ThemeContext';
-import { CompanyStatus, FlowStatus, MotivationRecord, Selection } from '@/src/types';
+import { CompanyStatus, DecisionNote, FlowStatus, MotivationRecord, Selection } from '@/src/types';
 import { EVAL_KEYS, EVAL_LABELS, FLOW_STATUS_LABEL, STATUS_LABEL } from '@/src/constants';
 import {
   compatibilityScore, daysLabel, daysUntil, formatDateFull, formatDateShort, latestMotivation,
@@ -15,6 +15,13 @@ import {
 import { StarRating } from '@/src/components/StarRating';
 import { FormInput, FormLabel, PrimaryButton } from '@/src/components/ui';
 import { selectionHref } from '@/src/routes';
+import { mergeFormEdit } from '@/src/sync/formMerge';
+import { isEqual } from '@/src/sync/merge';
+
+const EMPTY_DECISION: DecisionNote = { reason: '', hesitation: '', expectation: '' };
+const DECISION_LABELS: Record<keyof DecisionNote, string> = {
+  reason: 'この企業を選んだ理由', hesitation: '最後まで迷った理由', expectation: '入社後に期待すること',
+};
 
 const STATUS_COLOR_FOR = (colors: Colors): Record<CompanyStatus, { bg: string; text: string }> => ({
   active: { bg: colors.primaryLight, text: colors.primary },
@@ -126,13 +133,20 @@ export default function DetailScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [company?.id]);
 
-  // 意思決定メモ（読み込み完了・企業切り替え時に保存値で初期化）
-  const [decision, setDecision] = useState({ reason: '', hesitation: '', expectation: '' });
+  // 意思決定メモ。編集していない間は、別の端末での更新にも追従する
+  const savedDecision = company?.decision ?? EMPTY_DECISION;
+  const [decision, setDecision] = useState<DecisionNote>(EMPTY_DECISION);
+  const [decisionBase, setDecisionBase] = useState<DecisionNote>(EMPTY_DECISION);
   useEffect(() => {
-    if (company) setDecision(company.decision ?? { reason: '', hesitation: '', expectation: '' });
+    if (!company) return;
+    // 編集中（未保存の入力あり）なら入力を残し、比較の基準も動かさない
+    if (isEqual(decision, decisionBase)) {
+      setDecision(savedDecision);
+      setDecisionBase(savedDecision);
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [company?.id]);
-  const decisionDirty = JSON.stringify(decision) !== JSON.stringify(company?.decision ?? { reason: '', hesitation: '', expectation: '' });
+  }, [company?.id, JSON.stringify(savedDecision)]);
+  const decisionDirty = !isEqual(decision, savedDecision);
 
   const score = useMemo(() => (company ? compatibilityScore(company, weights) : null), [company, weights]);
 
@@ -161,8 +175,30 @@ export default function DetailScreen() {
     const today = todayStr();
     const others = (company.motivationHistory ?? []).filter((r) => r.date !== today);
     updateCompany(company.id, {
-      motivationHistory: [...others, { id: uid(), date: today, value: motivation }],
+      // 1企業1日1件。id を日付から決めることで、2台で同じ日に記録しても行が重複しない
+      motivationHistory: [...others, { id: `${company.id}_${today}`, date: today, value: motivation }],
     });
+  };
+
+  const saveDecision = () => {
+    const keys = Object.keys(DECISION_LABELS) as (keyof DecisionNote)[];
+    // decisionBase = 編集を始めた時点の保存値
+    const m = mergeFormEdit(decisionBase, decision, savedDecision, keys);
+    const save = (d: DecisionNote) => {
+      updateCompany(company.id, { decision: d });
+      setDecision(d);
+      setDecisionBase(d);
+    };
+    if (m.conflicts.length === 0) return save(m.merged);
+    Alert.alert(
+      '別の端末でこのデータが更新されています',
+      m.conflicts.map((k) => `・${DECISION_LABELS[k]}`).join('\n'),
+      [
+        { text: 'キャンセル', style: 'cancel' },
+        { text: '別の端末の内容を残す', onPress: () => save(m.keepLatest) },
+        { text: 'この端末の内容で上書き', style: 'destructive', onPress: () => save(m.merged) },
+      ],
+    );
   };
 
   const removeRecord = (r: MotivationRecord) => {
@@ -391,7 +427,7 @@ export default function DetailScreen() {
               <FormInput value={decision.expectation} onChangeText={(v) => setDecision((d) => ({ ...d, expectation: v }))} multiline placeholder="挑戦したいこと・身につけたいこと" />
             </View>
             {decisionDirty && (
-              <PrimaryButton label="メモを保存" onPress={() => updateCompany(company.id, { decision })} />
+              <PrimaryButton label="メモを保存" onPress={saveDecision} />
             )}
           </View>
         )}

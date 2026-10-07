@@ -21,6 +21,35 @@ import { Company, CompanyStatus, Flow, SelectionKind } from '@/src/types';
 import { FLOW_STATUS_OPTIONS, SELECTION_KINDS } from '@/src/constants';
 import { INDUSTRIES, uid } from '@/src/utils';
 import { reviewHref } from '@/src/routes';
+import { mergeFormEdit } from '@/src/sync/formMerge';
+
+/** フォームで編集する項目（保存時に他端末の変更とマージする） */
+const COMPANY_FORM_LABELS = {
+  name: '企業名', industry: '業界', mypageUrl: 'マイページURL', status: 'ステータス',
+  avgSalary: '平均年収', employees: '従業員数', location: '勤務地', founded: '設立年',
+  benefits: '福利厚生', business: '事業内容', notes: '魅力・メモ', concerns: '懸念点',
+} as const satisfies Partial<Record<keyof Company, string>>;
+const FLOW_FORM_LABELS = {
+  name: '名称', kind: '種類', date: '日付', time: '時間', online: '形式',
+  location: '場所', deadline: '締切', status: 'ステータス', memo: 'メモ',
+} as const satisfies Partial<Record<keyof Flow, string>>;
+const COMPANY_FORM_KEYS = Object.keys(COMPANY_FORM_LABELS) as (keyof typeof COMPANY_FORM_LABELS)[];
+const FLOW_FORM_KEYS = Object.keys(FLOW_FORM_LABELS) as (keyof typeof FLOW_FORM_LABELS)[];
+
+/** 別端末で削除された企業を新しい企業として保存し直すため、id を振り直す */
+function withNewIds(c: Company): Company {
+  return {
+    ...c,
+    id: uid(),
+    flows: c.flows.map((f) => ({
+      ...f,
+      id: uid(),
+      tasks: f.tasks?.map((t) => ({ ...t, id: uid() })),
+      review: f.review && { ...f.review, questions: f.review.questions.map((q) => ({ ...q, id: uid() })) },
+    })),
+    motivationHistory: undefined,
+  };
+}
 
 // ─── 小コンポーネント ─────────────────────────────
 
@@ -34,11 +63,12 @@ function FormLabel({ children }: { children: string }) {
   return <Text style={styles.label}>{children}</Text>;
 }
 
+// maxLength の既定値は DB の文字数制限（supabase/migrations）以下にしてある
 function FormInput({
-  value, onChangeText, placeholder, multiline = false,
+  value, onChangeText, placeholder, multiline = false, maxLength = multiline ? 5000 : 200,
 }: {
   value: string; onChangeText: (v: string) => void;
-  placeholder?: string; multiline?: boolean;
+  placeholder?: string; multiline?: boolean; maxLength?: number;
 }) {
   const { colors } = useTheme();
   const styles = useThemedStyles(makeStyles);
@@ -51,6 +81,7 @@ function FormInput({
       placeholderTextColor={colors.fgSub}
       multiline={multiline}
       numberOfLines={multiline ? 3 : 1}
+      maxLength={maxLength}
       textAlignVertical={multiline ? 'top' : 'center'}
     />
   );
@@ -110,7 +141,8 @@ function AddForm() {
   const { id } = useLocalSearchParams<{ id?: string }>();
   const { companies, addCompany, updateCompany } = useCompanies();
 
-  const editing = id ? companies.find((c) => c.id === id) : null;
+  // フォームを開いた時点の値（保存時に、他端末での変更と区別するために使う）
+  const [editing] = useState(() => (id ? companies.find((c) => c.id === id) ?? null : null));
 
   // 基本情報
   const [name, setName] = useState(editing?.name ?? '');
@@ -158,30 +190,15 @@ function AddForm() {
       return;
     }
 
-    // 振り返り・準備タスクは別画面で保存されるため、最新の保存データを優先する
-    const stored = companies.find((c) => c.id === editing?.id);
-    const validFlows = flows
-      .filter((f) => f.name.trim())
-      .map((f) => {
-        const s = stored?.flows.find((x) => x.id === f.id);
-        if (!s) return f;
-        const reviewChanged = s.review?.updatedAt !== f.review?.updatedAt;
-        return {
-          ...f,
-          review: s.review,
-          tasks: s.tasks,
-          status: reviewChanged ? s.status : f.status,
-        };
-      });
-
-    const company: Company = {
+    const edited: Company = {
+      ...(editing ?? {}),
       id: editing?.id ?? uid(),
       name: name.trim(),
       jobType: editing?.jobType ?? '',
       industry,
       mypageUrl: mypageUrl.trim(),
       status,
-      flows: validFlows,
+      flows: flows.filter((f) => f.name.trim()),
       avgSalary: avgSalary.trim(),
       employees: employees.trim(),
       location: location.trim(),
@@ -193,13 +210,73 @@ function AddForm() {
       createdAt: editing?.createdAt ?? new Date().toISOString(),
     };
 
-    if (editing) {
-      await updateCompany(editing.id, company);
-    } else {
-      await addCompany(company);
+    if (!editing) {
+      await addCompany(edited);
+      router.back();
+      return;
     }
 
-    router.back();
+    const latest = companies.find((c) => c.id === editing.id);
+    if (!latest) {
+      Alert.alert(
+        'この企業は別の端末で削除されています',
+        '入力した内容を新しい企業として保存しますか？',
+        [
+          { text: 'キャンセル', style: 'cancel' },
+          { text: '新しく保存する', onPress: async () => { await addCompany(withNewIds(edited)); router.back(); } },
+        ],
+      );
+      return;
+    }
+
+    // フォームで変更した項目だけを最新の値に重ねる（振り返り・準備タスクは別画面で保存されるので最新を使う）
+    const top = mergeFormEdit(editing, edited, latest, COMPANY_FORM_KEYS);
+    const conflictLabels: string[] = top.conflicts.map((k) => COMPANY_FORM_LABELS[k as keyof typeof COMPANY_FORM_LABELS]);
+    const initialFlows = new Map(editing.flows.map((f) => [f.id, f]));
+    const latestFlows = new Map(latest.flows.map((f) => [f.id, f]));
+    const flowsMerged: Flow[] = [];
+    const flowsKeep: Flow[] = [];
+    for (const f of edited.flows) {
+      const init = initialFlows.get(f.id);
+      const cur = latestFlows.get(f.id);
+      if (!init) {
+        flowsMerged.push(f);
+        flowsKeep.push(f);
+      } else if (cur) {
+        const m = mergeFormEdit(init, f, cur, FLOW_FORM_KEYS);
+        flowsMerged.push(m.merged);
+        flowsKeep.push(m.keepLatest);
+        conflictLabels.push(...m.conflicts.map((k) => `${cur.name}の${FLOW_FORM_LABELS[k as keyof typeof FLOW_FORM_LABELS]}`));
+      }
+      // init はあるが cur が無い = 別の端末で削除された選考 → 削除を優先
+    }
+    // フォームを開いた後に別の端末で追加された選考は残す
+    for (const f of latest.flows) {
+      if (!initialFlows.has(f.id)) {
+        flowsMerged.push(f);
+        flowsKeep.push(f);
+      }
+    }
+
+    const save = async (useLatestOnConflict: boolean) => {
+      const base = useLatestOnConflict ? top.keepLatest : top.merged;
+      await updateCompany(editing.id, { ...base, flows: useLatestOnConflict ? flowsKeep : flowsMerged });
+      router.back();
+    };
+
+    if (conflictLabels.length === 0) {
+      await save(false);
+      return;
+    }
+    Alert.alert(
+      '別の端末でこのデータが更新されています',
+      `この画面を開いた後に、次の項目が別の端末で変更されました。\n\n${conflictLabels.map((l) => `・${l}`).join('\n')}`,
+      [
+        { text: 'キャンセル', style: 'cancel' },
+        { text: '別の端末の内容を残す', onPress: () => save(true) },
+        { text: 'この端末の内容で上書き', style: 'destructive', onPress: () => save(false) },
+      ],
+    );
   };
 
   return (
@@ -251,7 +328,7 @@ function AddForm() {
             <View style={styles.formGroup}>
               <FormLabel>マイページURL</FormLabel>
               <FormInput
-                value={mypageUrl} onChangeText={setMypageUrl}
+                value={mypageUrl} onChangeText={setMypageUrl} maxLength={2000}
                 placeholder="https://..."
               />
             </View>
@@ -278,6 +355,7 @@ function AddForm() {
                     onChangeText={(v) => updateFlow(flow.id, { name: v })}
                     placeholder="例: ES、1次面接、最終面接..."
                     placeholderTextColor={colors.fgSub}
+                    maxLength={200}
                   />
                   <TouchableOpacity
                     style={styles.removeBtn}
@@ -358,6 +436,7 @@ function AddForm() {
                     value={flow.memo ?? ''}
                     onChangeText={(v) => updateFlow(flow.id, { memo: v })}
                     placeholder="持ち物・URL・面接官の名前など"
+                    maxLength={10000}
                     multiline
                   />
                 </View>
@@ -425,7 +504,7 @@ function AddForm() {
               </View>
               <View style={styles.formGroupHalf}>
                 <FormLabel>設立年</FormLabel>
-                <FormInput value={founded} onChangeText={setFounded} placeholder="例: 2000年" />
+                <FormInput value={founded} onChangeText={setFounded} maxLength={100} placeholder="例: 2000年" />
               </View>
             </View>
             <View style={styles.formGroup}>
@@ -447,7 +526,7 @@ function AddForm() {
             <View style={styles.formGroup}>
               <FormLabel>魅力・メモ</FormLabel>
               <FormInput
-                value={notes} onChangeText={setNotes}
+                value={notes} onChangeText={setNotes} maxLength={10000}
                 placeholder="気になった点・志望動機など..."
                 multiline
               />
@@ -455,7 +534,7 @@ function AddForm() {
             <View style={[styles.formGroup, { marginBottom: 0 }]}>
               <FormLabel>懸念点</FormLabel>
               <FormInput
-                value={concerns} onChangeText={setConcerns}
+                value={concerns} onChangeText={setConcerns} maxLength={10000}
                 placeholder="不安な点・気になる口コミなど..."
                 multiline
               />

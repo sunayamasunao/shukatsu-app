@@ -4,15 +4,20 @@
     "slug": "shukatsu-app",
     "version": "1.0.0",
     "orientation": "portrait",
+    "icon": "./assets/icon.png",
     "scheme": "shukatsu",
     "userInterfaceStyle": "automatic",
     "ios": {
-      "bundleIdentifier": "com.yourname.shukatsu",
-      "supportsTablet": false
+      "bundleIdentifier": "com.kazuhiromori.shukatsu",
+      "supportsTablet": true,
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
     "android": {
-      "package": "com.yourname.shukatsu",
+      "package": "com.kazuhiromori.shukatsu",
       "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#2563EB"
       }
     },
@@ -23,6 +28,15 @@
     ],
     "experiments": {
       "typedRoutes": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "ed79dbf1-718f-41e9-a16d-5951c132ac17"
+      }
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
     }
   }
 }

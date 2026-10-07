@@ -68,11 +68,12 @@ export function FormLabel({ children, hint }: { children: string; hint?: string 
   );
 }
 
+// maxLength の既定値は DB の文字数制限（supabase/migrations）以下にしてある
 export function FormInput({
-  value, onChangeText, placeholder, multiline = false, keyboardType,
+  value, onChangeText, placeholder, multiline = false, keyboardType, maxLength = multiline ? 5000 : 200,
 }: {
   value: string; onChangeText: (v: string) => void;
-  placeholder?: string; multiline?: boolean; keyboardType?: 'default' | 'number-pad';
+  placeholder?: string; multiline?: boolean; keyboardType?: 'default' | 'number-pad'; maxLength?: number;
 }) {
   const { colors } = useTheme();
   const styles = useThemedStyles(makeStyles);
@@ -85,6 +86,7 @@ export function FormInput({
       placeholderTextColor={colors.fgSub}
       multiline={multiline}
       keyboardType={keyboardType}
+      maxLength={maxLength}
       textAlignVertical={multiline ? 'top' : 'center'}
     />
   );

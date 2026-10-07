@@ -15,6 +15,7 @@ import { Colors, radius, shadow, spacing } from '@/src/theme';
 import { useTheme, useThemedStyles } from '@/src/context/ThemeContext';
 import { Company, CompanyStatus } from '@/src/types';
 import { TodaySection, UpcomingSection } from '@/src/components/HomeSections';
+import { SyncBanner } from '@/src/components/SyncBanner';
 import {
   compareCompanyName, daysUntil, formatDateShort, industryOrder, nearestDeadline, selectionDate,
 } from '@/src/utils';
@@ -115,7 +116,7 @@ export default function HomeScreen() {
 
         {/* 次の締め切り */}
         {nd ? (() => {
-          const days = daysUntil(nd.deadline);
+          const days = daysUntil(selectionDate(nd));
           const daysStr =
             days === 0 ? '今日！' : days < 0 ? `${Math.abs(days)}日前` : `あと${days}日`;
           const dateColor =
@@ -125,7 +126,7 @@ export default function HomeScreen() {
               <Text style={styles.deadlineLabel}>次の締切</Text>
               <Text style={styles.deadlineName} numberOfLines={1}>{nd.name}</Text>
               <Text style={[styles.deadlineDate, { color: dateColor }]}>
-                {formatDateShort(nd.deadline)}（{daysStr}）
+                {formatDateShort(selectionDate(nd))}（{daysStr}）
               </Text>
             </View>
           );
@@ -136,6 +137,8 @@ export default function HomeScreen() {
 
   const listHeader = (
     <View>
+      <SyncBanner />
+
       {/* 統計タイル */}
       <View style={styles.statsRow}>
         {[

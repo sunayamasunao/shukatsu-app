@@ -198,6 +198,7 @@ export default function SelectionScreen() {
                 onChangeText={setNewTask}
                 placeholder="準備することを追加"
                 placeholderTextColor={colors.fgSub}
+                maxLength={500}
                 onSubmitEditing={() => { addTasks([newTask.trim()]); setNewTask(''); }}
                 returnKeyType="done"
               />
