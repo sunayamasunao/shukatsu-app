@@ -14,7 +14,7 @@
 | ⑥ | 今日やること | 締切・面接と準備タスクを優先度順に表示 |
 | ⑦ | 抜け漏れ検知 | 「2日後に面接なのに準備が未登録」など本当に必要なものだけ警告 |
 | ⑧ | 選考フロー | ES〜最終面接・インターン等、日時・場所・形式・締切・ステータス・メモ |
-| ⑨ | カレンダー | 選考の日付・締切を自動表示、タップで選考詳細へ |
+| ⑨ | カレンダー | 選考の日付・締切を自動表示（選考・締切・通過・不合格を色分け）、日付をタップでその日の予定だけ表示、予定をタップで選考詳細へ |
 | | アカウント・同期 | メール認証、iPhone / iPad 間の同期、オフライン対応、同時編集の競合検知 |
 
 ## セットアップ
@@ -43,9 +43,18 @@ npx expo start -c         # -c でキャッシュを消す（.env の変更を�
 ### テスト
 
 ```bash
-npm test          # 同期エンジン（2台の端末を再現）＋ DB（PGlite = WASM版Postgres で RLS を検証）
+npm test          # 同期エンジン（2台の端末を再現）＋ DB（PGlite = WASM版Postgres で RLS を検証）＋ 表示用の関数
 npm run typecheck
 ```
+
+### リリース（App Store）
+
+```bash
+# app.json の version を上げてから実行（ビルド番号は EAS が自動で上げる）
+npx eas-cli build -p ios --profile production --auto-submit
+```
+
+`eas.json` の `submit.production.ios.ascAppId` に App Store Connect のアプリIDを設定してあるので、ビルド後に自動で App Store Connect（TestFlight）へアップロードされる。審査への提出は App Store Connect から行う。
 
 ## 技術スタック
 
@@ -58,6 +67,7 @@ npm run typecheck
 | DB | Supabase (PostgreSQL) + Row Level Security |
 | リアルタイム | Supabase Realtime（postgres_changes） |
 | 端末内保存 | AsyncStorage（オフラインファースト） |
+| UI | 独自のデザイントークン（`src/theme.ts`）＋ 共通部品（`src/components/ui.tsx`）、タブバーは expo-blur のすりガラス |
 | テスト | node:test + PGlite |
 
 ## 設計
@@ -153,6 +163,17 @@ DB の制約（文字数上限など）に拒否された変更は、端末に�
 - **ユーザーごとの分離は？** → RLS と複合外部キーで DB 側が強制。アプリのバグがあっても他人のデータは返らない（`tests/db.test.ts` で検証）
 - **なぜこの DB 構造？** → 企業→選考→振り返り→質問という親子関係を外部キーで保証でき、振り返りの質問を全企業横断で集計（よく聞かれた質問）しやすいため。同期の単位を行にすることで、競合の範囲を小さくできる
 
+### UI デザイン（v1.1.0〜）
+
+Apple 純正アプリのような自然さを目指し、**カードを重ねて影で囲む**のではなく、**余白・文字の大きさ・薄い塗り**で情報の優先順位を表す。
+
+- **デザイントークン**（`src/theme.ts`）: 色（`bg` 白 / `surface` 薄いグレーの塗り / `elevated` 塗りの上のボタン など）、余白（画面左右 20・セクション間 32）、角丸、文字の階層（`largeTitle` / `title` / `headline` / `body` / `caption` / 等幅数字の `number`）、iPad 用の最大幅（720）
+- **色の意味**: 青は主要アクション・選択状態・「今」だけに使う。成功＝緑、注意（締切が近い）＝オレンジ、不合格・削除＝赤。ステータスと色の対応は `src/presentation.ts` に集約し、テストで固定している
+- **共通部品**（`src/components/ui.tsx`）: `LargeTitle`（タブ画面の大見出し）、`Section`、`Group` / `ListRow`（設定画面のような行）、`Segmented`、`Pill`、`ProgressBar`、`IconButton`、`SheetHeader`（キャンセル／保存のシート）、`FormInput` / `Chips` など
+- **タブバー**（`src/components/FloatingTabBar.tsx`）: 画面下に浮かぶすりガラス（expo-blur）の角丸バー。選択中のピルはバネのアニメーションで移動する。タブの切り替えは React Navigation 標準の `tabPress` → `navigate` に従う。内容がバーに隠れないよう、タブ画面の下余白は `spacing.tabBar`
+- **ダークモード**: 色を反転するのではなく、背景（ほぼ黒）→ 塗り → 一段明るいボタン、の階層で表現する
+- **見た目とデータ処理の分離**: 画面はデータを `useCompanies()` から受け取り、保存・同期の処理には触れない。表示だけの計算（マス目、日付のまとめ方、色）は `src/presentation.ts` の純粋関数にしている
+
 ### 今後の拡張
 
 - Apple / Google ログイン（Supabase Auth の OAuth。開発ビルドと各プロバイダの設定が必要）
@@ -176,7 +197,10 @@ shukatsu-app/
 │   ├── context/               # Auth / Companies / Theme
 │   ├── lib/supabase.ts        # Supabase クライアント
 │   ├── sync/                  # 同期エンジン（schema / mapping / merge / engine / formMerge / supabaseRemote）
-│   ├── components/  types/  utils/  constants.ts  theme.ts
+│   ├── components/            # 共通部品（ui.tsx）・タブバー・ホームのセクションなど
+│   ├── theme.ts               # デザイントークン（色・余白・角丸・文字）
+│   ├── presentation.ts        # 表示用の純粋関数（ステータスの色・カレンダーのマス目など）
+│   ├── types/  utils/  constants.ts
 ├── supabase/migrations/       # DB スキーマ・RLS
-└── tests/                     # 同期・DB のテスト
+└── tests/                     # 同期・DB・表示用の関数のテスト
 ```
