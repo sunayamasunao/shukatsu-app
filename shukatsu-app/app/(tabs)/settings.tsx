@@ -6,9 +6,11 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { useCompanies } from '@/src/context/CompaniesContext';
 import { useAuth } from '@/src/context/AuthContext';
-import { Colors, radius, shadow, spacing } from '@/src/theme';
+import { Colors, radius, readable, spacing } from '@/src/theme';
 import { useTheme, useThemedStyles } from '@/src/context/ThemeContext';
 import { buildSampleCompanies } from '@/src/sampleData';
+import { Tone } from '@/src/presentation';
+import { Group, LargeTitle, ListRow, Section } from '@/src/components/ui';
 
 export default function SettingsScreen() {
   const { colors, isDark, setDark } = useTheme();
@@ -29,6 +31,16 @@ export default function SettingsScreen() {
         : sync.rejected.length > 0 ? `保存できなかった変更 ${sync.rejected.length}件`
           : sync.pending > 0 ? `未送信 ${sync.pending}件`
           : `同期済み・${lastSynced}`;
+  // 同期状態のアイコンの色
+  const syncTone: Tone =
+    sync.phase === 'syncing' ? 'primary'
+      : sync.phase === 'offline' ? 'neutral'
+        : sync.rejected.length > 0 || sync.pending > 0 ? 'warning'
+          : 'success';
+  const syncIcon =
+    sync.phase === 'offline' ? 'cloud-offline-outline' as const
+      : sync.rejected.length > 0 || sync.pending > 0 ? 'cloud-upload-outline' as const
+        : 'cloud-done-outline' as const;
 
   const logout = async () => {
     setBusy(true);
@@ -94,106 +106,146 @@ export default function SettingsScreen() {
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.content}>
-        <View style={styles.header}>
-          <Text style={styles.title}>設定</Text>
-        </View>
+        <LargeTitle title="設定" />
 
         {/* アカウント・同期 */}
-        <Text style={styles.sectionTitle}>アカウント</Text>
-        <View style={styles.card}>
+        <Section title="アカウント">
           {cloud ? (
             <>
-              <View style={styles.row}>
-                <Text style={styles.rowLabel}>ログイン中</Text>
-                <Text style={styles.rowValue} numberOfLines={1}>{email}</Text>
-              </View>
-              <TouchableOpacity style={styles.row} onPress={() => syncNow()} disabled={busy}>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.rowLabel}>クラウド同期</Text>
-                  <Text style={styles.rowSub}>{syncLabel}</Text>
+              <View style={styles.profile}>
+                <View style={styles.avatar}>
+                  <Text style={styles.avatarText}>{(email ?? '?').slice(0, 1).toUpperCase()}</Text>
                 </View>
-                {sync.phase === 'syncing' || busy
-                  ? <ActivityIndicator color={colors.primary} />
-                  : <Text style={[styles.rowValue, { color: colors.primary }]}>今すぐ同期</Text>}
-              </TouchableOpacity>
-              {sync.conflicts.length + sync.rejected.length > 0 && (
-                <TouchableOpacity style={styles.row} onPress={() => router.push('/conflicts')}>
-                  <Text style={[styles.rowLabel, { color: colors.warning }]}>
-                    ⚠️ 確認が必要な変更（{sync.conflicts.length + sync.rejected.length}件）
-                  </Text>
-                  <Text style={styles.rowValue}>›</Text>
-                </TouchableOpacity>
-              )}
-              {localOnlyCount > 0 && (
-                <TouchableOpacity style={styles.row} onPress={importLocalData}>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.rowLabel}>この端末のデータをアカウントに移行</Text>
-                    <Text style={styles.rowSub}>
-                      ログイン前に保存した{localOnlyCount}社のデータが、この端末にだけ残っています
-                    </Text>
-                  </View>
-                  <Text style={[styles.rowValue, { color: colors.primary }]}>移行</Text>
-                </TouchableOpacity>
-              )}
-              <TouchableOpacity style={[styles.row, { borderBottomWidth: 0 }]} onPress={logout} disabled={busy}>
-                <Text style={[styles.rowLabel, { color: colors.primary }]}>ログアウト</Text>
-              </TouchableOpacity>
+                <View style={{ flex: 1, minWidth: 0 }}>
+                  <Text style={styles.profileEmail} numberOfLines={1}>{email}</Text>
+                  <Text style={styles.profileSub}>ログイン中</Text>
+                </View>
+              </View>
+              <Group>
+                <ListRow
+                  icon={syncIcon}
+                  iconTone={syncTone}
+                  title="クラウド同期"
+                  subtitle={syncLabel}
+                  onPress={() => syncNow()}
+                  disabled={busy}
+                  last={sync.conflicts.length + sync.rejected.length === 0 && localOnlyCount === 0}
+                  right={sync.phase === 'syncing' || busy
+                    ? <ActivityIndicator color={colors.primary} />
+                    : <Text style={styles.actionText}>今すぐ同期</Text>}
+                />
+                {sync.conflicts.length + sync.rejected.length > 0 && (
+                  <ListRow
+                    icon="alert-circle"
+                    iconTone="warning"
+                    title={`確認が必要な変更（${sync.conflicts.length + sync.rejected.length}件）`}
+                    titleColor={colors.warning}
+                    onPress={() => router.push('/conflicts')}
+                    chevron
+                    last={localOnlyCount === 0}
+                  />
+                )}
+                {localOnlyCount > 0 && (
+                  <ListRow
+                    icon="phone-portrait-outline"
+                    iconTone="primary"
+                    title="この端末のデータをアカウントに移行"
+                    subtitle={`ログイン前に保存した${localOnlyCount}社のデータが、この端末にだけ残っています`}
+                    onPress={importLocalData}
+                    right={<Text style={styles.actionText}>移行</Text>}
+                    last
+                  />
+                )}
+              </Group>
+              <Group style={{ marginTop: 12 }}>
+                <ListRow
+                  title="ログアウト"
+                  titleColor={colors.primary}
+                  onPress={logout}
+                  disabled={busy}
+                  last
+                />
+              </Group>
             </>
           ) : (
-            <View style={[styles.row, { borderBottomWidth: 0 }]}>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.rowLabel}>ローカル保存モード</Text>
-                <Text style={styles.rowSub}>
-                  データはこの端末だけに保存されています。.env に Supabase を設定すると、ログインと複数端末同期が有効になります。
-                </Text>
-              </View>
-            </View>
+            <Group>
+              <ListRow
+                icon="phone-portrait-outline"
+                title="ローカル保存モード"
+                subtitle="データはこの端末だけに保存されています。.env に Supabase を設定すると、ログインと複数端末同期が有効になります。"
+                last
+              />
+            </Group>
           )}
-        </View>
+        </Section>
 
         {/* 表示 */}
-        <Text style={styles.sectionTitle}>表示</Text>
-        <View style={styles.card}>
-          <View style={[styles.row, { borderBottomWidth: 0 }]}>
-            <Text style={styles.rowLabel}>ダークモード</Text>
-            <Switch
-              value={isDark}
-              onValueChange={setDark}
-              trackColor={{ false: colors.border, true: colors.primary }}
-              thumbColor="#fff"
-              ios_backgroundColor={colors.border}
+        <Section title="表示">
+          <Group>
+            <ListRow
+              icon={isDark ? 'moon' : 'moon-outline'}
+              iconTone={isDark ? 'primary' : undefined}
+              title="ダークモード"
+              last
+              right={
+                <Switch
+                  value={isDark}
+                  onValueChange={setDark}
+                  trackColor={{ false: colors.surface2, true: colors.success }}
+                  thumbColor="#fff"
+                  ios_backgroundColor={colors.surface2}
+                />
+              }
             />
-          </View>
-        </View>
+          </Group>
+        </Section>
 
         {/* データ */}
-        <Text style={styles.sectionTitle}>データ</Text>
-        <View style={styles.card}>
-          <View style={styles.row}>
-            <Text style={styles.rowLabel}>登録企業数</Text>
-            <Text style={[styles.rowValue, { color: colors.primary }]}>{companies.length}</Text>
-          </View>
-          <View style={[styles.row, { borderBottomWidth: 0 }]}>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.rowLabel}>サンプルデータを追加</Text>
-              <Text style={styles.rowSub}>使い方を確認できるサンプルを追加します</Text>
-            </View>
-            <TouchableOpacity style={styles.addBtn} onPress={addSample}>
-              <Text style={styles.addBtnText}>追加</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
+        <Section title="データ">
+          <Group>
+            <ListRow
+              icon="briefcase-outline"
+              title="登録企業数"
+              right={<Text style={styles.valueText}>{companies.length}社</Text>}
+            />
+            <ListRow
+              icon="sparkles-outline"
+              title="サンプルデータを追加"
+              subtitle="使い方を確認できるサンプルを追加します"
+              last
+              right={
+                <TouchableOpacity style={styles.addBtn} onPress={addSample} activeOpacity={0.6}>
+                  <Text style={styles.addBtnText}>追加</Text>
+                </TouchableOpacity>
+              }
+            />
+          </Group>
+        </Section>
 
         {/* 危険な操作 */}
-        <Text style={styles.sectionTitle}>危険な操作</Text>
-        <TouchableOpacity style={styles.dangerBtn} onPress={clearAll}>
-          <Text style={styles.dangerBtnText}>すべてのデータを削除する</Text>
-        </TouchableOpacity>
-        {cloud && (
-          <TouchableOpacity style={[styles.dangerBtn, { marginTop: 10 }]} onPress={removeAccount} disabled={busy}>
-            <Text style={styles.dangerBtnText}>アカウントを削除する</Text>
-          </TouchableOpacity>
-        )}
+        <Section title="危険な操作" footer="どちらも取り消すことはできません。">
+          <Group>
+            <ListRow
+              icon="trash-outline"
+              iconTone="danger"
+              title="すべてのデータを削除する"
+              destructive
+              onPress={clearAll}
+              last={!cloud}
+            />
+            {cloud && (
+              <ListRow
+                icon="person-remove-outline"
+                iconTone="danger"
+                title="アカウントを削除する"
+                destructive
+                onPress={removeAccount}
+                disabled={busy}
+                last
+              />
+            )}
+          </Group>
+        </Section>
       </ScrollView>
     </SafeAreaView>
   );
@@ -201,41 +253,22 @@ export default function SettingsScreen() {
 
 const makeStyles = (colors: Colors) => StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bg },
-  content: { padding: spacing.md, paddingBottom: 40 },
+  content: { ...readable, paddingHorizontal: spacing.screen, paddingBottom: spacing.tabBar },
 
-  header: { marginBottom: 20 },
-  title: { fontSize: 26, fontWeight: '700', color: colors.fg, letterSpacing: -0.5 },
+  profile: { flexDirection: 'row', alignItems: 'center', gap: 14, marginBottom: 16 },
+  avatar: {
+    width: 52, height: 52, borderRadius: 26, backgroundColor: colors.primaryLight,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  avatarText: { fontSize: 22, fontWeight: '800', color: colors.primary },
+  profileEmail: { fontSize: 17, fontWeight: '700', color: colors.fg },
+  profileSub: { fontSize: 13, color: colors.fgMuted, marginTop: 2 },
 
-  sectionTitle: {
-    fontSize: 12, fontWeight: '700', color: colors.fgMuted,
-    letterSpacing: 0.8, textTransform: 'uppercase',
-    marginBottom: 8, marginTop: 20,
-  },
-  card: {
-    backgroundColor: colors.surface,
-    borderRadius: radius.md,
-    ...shadow, overflow: 'hidden',
-  },
-  row: {
-    flexDirection: 'row', alignItems: 'center', gap: 12,
-    paddingHorizontal: spacing.md, paddingVertical: 14,
-    borderBottomWidth: 1, borderBottomColor: colors.border,
-  },
-  rowLabel: { flex: 1, fontSize: 15, fontWeight: '500', color: colors.fg },
-  rowSub: { fontSize: 12, color: colors.fgMuted, marginTop: 2 },
-  rowValue: { flexShrink: 1, fontSize: 15, fontWeight: '600', color: colors.fgMuted },
+  actionText: { fontSize: 15, fontWeight: '600', color: colors.primary },
+  valueText: { fontSize: 16, color: colors.fgMuted, fontVariant: ['tabular-nums'] },
   addBtn: {
-    backgroundColor: colors.primaryLight, paddingHorizontal: 16,
-    paddingVertical: 8, borderRadius: radius.sm,
+    backgroundColor: colors.elevated, paddingHorizontal: 16,
+    paddingVertical: 7, borderRadius: radius.full,
   },
-  addBtnText: { color: colors.primary, fontWeight: '600', fontSize: 13 },
-
-  dangerBtn: {
-    backgroundColor: colors.dangerLight,
-    borderRadius: radius.md,
-    paddingVertical: 16,
-    alignItems: 'center',
-    ...shadow,
-  },
-  dangerBtnText: { color: colors.danger, fontWeight: '700', fontSize: 15 },
+  addBtnText: { color: colors.primary, fontWeight: '700', fontSize: 14 },
 });

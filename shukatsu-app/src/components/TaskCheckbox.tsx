@@ -4,7 +4,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../theme';
 import { useTheme, useThemedStyles } from '../context/ThemeContext';
 
-/** 準備タスクのチェックボックス。完了すると青いチェックが入り、文字に取り消し線が付く */
+/** 準備タスクのチェックボックス。完了すると青い丸にチェックが入り、文字に取り消し線が付く */
 export function TaskCheckbox({
   label, checked, onToggle, size = 'md',
 }: {
@@ -12,19 +12,26 @@ export function TaskCheckbox({
 }) {
   const { colors } = useTheme();
   const styles = useThemedStyles(makeStyles);
-  const box = size === 'sm' ? 18 : 22;
+  const box = size === 'sm' ? 20 : 22;
   return (
-    <TouchableOpacity style={styles.row} onPress={onToggle} activeOpacity={0.6} hitSlop={4}>
+    <TouchableOpacity
+      style={styles.row}
+      onPress={onToggle}
+      activeOpacity={0.6}
+      hitSlop={6}
+      accessibilityRole="checkbox"
+      accessibilityState={{ checked }}
+    >
       <View
         style={[
           styles.box,
-          { width: box, height: box, borderRadius: size === 'sm' ? 4 : 6 },
+          { width: box, height: box, borderRadius: box / 2 },
           checked && { backgroundColor: colors.primary, borderColor: colors.primary },
         ]}
       >
-        {checked && <Ionicons name="checkmark" size={box - 6} color="#fff" />}
+        {checked && <Ionicons name="checkmark" size={box - 7} color={colors.onPrimary} />}
       </View>
-      <Text style={[styles.label, size === 'sm' && { fontSize: 14 }, checked && styles.labelDone]}>
+      <Text style={[styles.label, size === 'sm' && { fontSize: 15 }, checked && styles.labelDone]}>
         {label}
       </Text>
     </TouchableOpacity>
@@ -32,11 +39,11 @@ export function TaskCheckbox({
 }
 
 const makeStyles = (colors: Colors) => StyleSheet.create({
-  row: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 10 },
+  row: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 12 },
   box: {
-    borderWidth: 2, borderColor: colors.fgSub,
+    borderWidth: 1.5, borderColor: colors.fgSub,
     alignItems: 'center', justifyContent: 'center',
   },
-  label: { flex: 1, fontSize: 15, color: colors.fg },
+  label: { flex: 1, fontSize: 16, color: colors.fg, lineHeight: 22 },
   labelDone: { color: colors.fgSub, textDecorationLine: 'line-through' },
 });

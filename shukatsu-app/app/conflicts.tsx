@@ -6,9 +6,10 @@ import React from 'react';
 import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
 import { useCompanies } from '@/src/context/CompaniesContext';
 import { useTheme, useThemedStyles } from '@/src/context/ThemeContext';
-import { Colors, radius, shadow, spacing } from '@/src/theme';
+import { Colors, radius, readable, spacing } from '@/src/theme';
 import { ScreenHeader } from '@/src/components/ui';
 import {
   EVAL_LABELS, FLOW_STATUS_LABEL, REVIEW_RESULT_OPTIONS, SELF_RATING_LABELS, STATUS_LABEL,
@@ -57,7 +58,7 @@ export default function ConflictsScreen() {
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
       <ScreenHeader title="確認が必要な変更" />
-      <ScrollView contentContainerStyle={styles.content}>
+      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         {sync.rejected.length > 0 && (
           <>
             <Text style={styles.groupTitle}>クラウドに保存できなかった変更</Text>
@@ -87,7 +88,8 @@ export default function ConflictsScreen() {
 
         {conflicts.length === 0 ? (sync.rejected.length > 0 ? null : (
           <View style={styles.empty}>
-            <Text style={styles.emptyText}>✅ 確認が必要な更新はありません</Text>
+            <Ionicons name="checkmark-circle" size={36} color={colors.success} />
+            <Text style={styles.emptyText}>確認が必要な更新はありません</Text>
           </View>
         )) : (
           <Text style={styles.lead}>
@@ -147,34 +149,35 @@ export default function ConflictsScreen() {
 
 const makeStyles = (colors: Colors) => StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bg },
-  content: { padding: spacing.md, paddingBottom: 40 },
-  groupTitle: { fontSize: 15, fontWeight: '700', color: colors.fg, marginBottom: 6, marginTop: 4 },
-  lead: { fontSize: 13, lineHeight: 20, color: colors.fgMuted, marginBottom: 14 },
-  empty: { alignItems: 'center', paddingVertical: 60 },
-  emptyText: { fontSize: 15, color: colors.fgMuted },
+  content: { ...readable, paddingHorizontal: spacing.screen, paddingTop: spacing.sm, paddingBottom: 48 },
+  groupTitle: { fontSize: 17, fontWeight: '700', color: colors.fg, marginBottom: 6, marginTop: 8 },
+  lead: { fontSize: 14, lineHeight: 21, color: colors.fgMuted, marginBottom: 16 },
+  empty: { alignItems: 'center', paddingVertical: 72, gap: 12 },
+  emptyText: { fontSize: 16, color: colors.fgMuted },
 
   card: {
-    backgroundColor: colors.surface, borderRadius: radius.md, padding: spacing.md,
-    marginBottom: 12, ...shadow,
+    backgroundColor: colors.surface, borderRadius: radius.lg, padding: spacing.md,
+    marginBottom: 12,
   },
-  where: { fontSize: 12, color: colors.fgMuted },
-  field: { fontSize: 16, fontWeight: '700', color: colors.fg, marginTop: 2 },
-  sub: { fontSize: 13, color: colors.fgMuted, marginTop: 6 },
-  compare: { gap: 8, marginTop: 10 },
+  where: { fontSize: 13, color: colors.fgMuted },
+  field: { fontSize: 17, fontWeight: '700', color: colors.fg, marginTop: 2 },
+  sub: { fontSize: 14, color: colors.fgMuted, marginTop: 6, lineHeight: 20 },
+  compare: { gap: 8, marginTop: 12 },
   valueBox: {
-    borderWidth: 1, borderColor: colors.border, borderRadius: radius.sm, padding: spacing.sm,
+    borderWidth: 1.5, borderColor: 'transparent', backgroundColor: colors.bg,
+    borderRadius: radius.sm, padding: 12,
   },
-  valueTag: { fontSize: 11, fontWeight: '700', color: colors.fgMuted, marginBottom: 2 },
-  value: { fontSize: 14, color: colors.fg, lineHeight: 20 },
-  actions: { flexDirection: 'row', gap: 8, marginTop: 12 },
+  valueTag: { fontSize: 12, fontWeight: '700', color: colors.fgMuted, marginBottom: 4 },
+  value: { fontSize: 15, color: colors.fg, lineHeight: 21 },
+  actions: { flexDirection: 'row', gap: 8, marginTop: 14 },
   btnSoft: {
-    flex: 1, backgroundColor: colors.primaryLight, borderRadius: radius.sm,
-    paddingVertical: 10, alignItems: 'center',
+    flex: 1, backgroundColor: colors.primary, borderRadius: radius.full,
+    paddingVertical: 12, alignItems: 'center',
   },
-  btnSoftText: { color: colors.primary, fontWeight: '700', fontSize: 13 },
+  btnSoftText: { color: colors.onPrimary, fontWeight: '700', fontSize: 14 },
   btnOutline: {
-    flex: 1, borderWidth: 1, borderColor: colors.border, borderRadius: radius.sm,
-    paddingVertical: 10, alignItems: 'center',
+    flex: 1, backgroundColor: colors.elevated, borderRadius: radius.full,
+    paddingVertical: 12, alignItems: 'center',
   },
-  btnOutlineText: { color: colors.fg, fontWeight: '600', fontSize: 13 },
+  btnOutlineText: { color: colors.fg, fontWeight: '600', fontSize: 14 },
 });

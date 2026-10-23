@@ -8,7 +8,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useCompanies } from '@/src/context/CompaniesContext';
 import { useTheme, useThemedStyles } from '@/src/context/ThemeContext';
-import { Colors, radius, spacing } from '@/src/theme';
+import { Colors, radius, readable, spacing } from '@/src/theme';
 import {
   InterviewFormat, Question, ReviewResult, SelectionReview, SelfRatingKey, SelfRatings,
 } from '@/src/types';
@@ -16,7 +16,7 @@ import { INTERVIEW_FORMATS, REVIEW_RESULT_OPTIONS, SELF_RATING_LABELS } from '@/
 import { frequentQuestions, todayStr, uid } from '@/src/utils';
 import { DateInput } from '@/src/components/DateInput';
 import { StarRating } from '@/src/components/StarRating';
-import { Card, Chips, FormInput, FormLabel, SectionTitle } from '@/src/components/ui';
+import { Chips, FormInput, FormLabel, SectionTitle, SheetHeader } from '@/src/components/ui';
 import { mergeFormEdit } from '@/src/sync/formMerge';
 
 /** 保存時に他端末の変更とマージする項目 */
@@ -133,152 +133,148 @@ function ReviewForm() {
     <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
         {/* ヘッダー（企業追加画面と同じ形） */}
-        <View style={styles.header}>
-          <TouchableOpacity style={styles.cancelBtn} onPress={() => router.back()}>
-            <Text style={styles.cancelBtnText}>キャンセル</Text>
-          </TouchableOpacity>
-          <View style={{ flex: 1, alignItems: 'center' }}>
-            <Text style={styles.headerSub} numberOfLines={1}>{company.name}</Text>
-            <Text style={styles.headerTitle} numberOfLines={1}>{selection.name}の振り返り</Text>
-          </View>
-          <TouchableOpacity style={styles.saveBtn} onPress={handleSave}>
-            <Text style={styles.saveBtnText}>保存</Text>
-          </TouchableOpacity>
-        </View>
+        <SheetHeader
+          title={`${selection.name}の振り返り`}
+          subtitle={company.name}
+          onCancel={() => router.back()}
+          onSave={handleSave}
+        />
 
         <ScrollView
           showsVerticalScrollIndicator={false}
           contentContainerStyle={styles.content}
           keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="interactive"
         >
           {/* 選考結果 */}
           <SectionTitle>選考結果</SectionTitle>
-          <Card>
-            <View style={styles.formGroup}>
-              <FormLabel>結果</FormLabel>
-              <Chips value={result} onChange={setResult} options={REVIEW_RESULT_OPTIONS} />
+          <View style={styles.formGroup}>
+            <FormLabel>結果</FormLabel>
+            <Chips value={result} onChange={setResult} options={REVIEW_RESULT_OPTIONS} />
+          </View>
+          <View style={styles.formRow}>
+            <View style={{ flex: 1 }}>
+              <FormLabel>面接日</FormLabel>
+              <DateInput value={date} onChange={setDate} />
             </View>
-            <View style={styles.formRow}>
-              <View style={{ flex: 1 }}>
-                <FormLabel>面接日</FormLabel>
-                <DateInput value={date} onChange={setDate} />
-              </View>
-              <View style={{ flex: 1 }}>
-                <FormLabel>時間</FormLabel>
-                <DateInput mode="time" value={time} onChange={setTime} clearable />
-              </View>
+            <View style={{ flex: 1 }}>
+              <FormLabel>時間</FormLabel>
+              <DateInput mode="time" value={time} onChange={setTime} clearable />
             </View>
-            <View style={styles.formGroup}>
-              <FormLabel>面接形式</FormLabel>
-              <Chips
-                value={format}
-                onChange={(v) => setFormat(v as InterviewFormat)}
-                options={INTERVIEW_FORMATS.map((f) => ({ value: f, label: f }))}
-                allowDeselect
-              />
-            </View>
-            <View>
-              <FormLabel>面接官の人数</FormLabel>
-              <Chips
-                value={interviewerCount}
-                onChange={(v) => setInterviewerCount(Number(v) || 0)}
-                options={[1, 2, 3, 4, 5].map((n) => ({ value: n, label: n === 5 ? '5人以上' : `${n}人` }))}
-                allowDeselect
-              />
-            </View>
-          </Card>
+          </View>
+          <View style={styles.formGroup}>
+            <FormLabel>面接形式</FormLabel>
+            <Chips
+              value={format}
+              onChange={(v) => setFormat(v as InterviewFormat)}
+              options={INTERVIEW_FORMATS.map((f) => ({ value: f, label: f }))}
+              allowDeselect
+            />
+          </View>
+          <View>
+            <FormLabel>面接官の人数</FormLabel>
+            <Chips
+              value={interviewerCount}
+              onChange={(v) => setInterviewerCount(Number(v) || 0)}
+              options={[1, 2, 3, 4, 5].map((n) => ({ value: n, label: n === 5 ? '5人以上' : `${n}人` }))}
+              allowDeselect
+            />
+          </View>
 
           {/* 質問 */}
           <SectionTitle>面接で聞かれた質問</SectionTitle>
-          <Card>
-            {questions.map((q, i) => (
-              <View key={q.id} style={styles.qItem}>
-                <View style={styles.qTop}>
-                  <Text style={styles.qNum}>Q{i + 1}</Text>
-                  <TextInput
-                    style={styles.qInput}
-                    value={q.text}
-                    onChangeText={(v) => updateQuestion(q.id, { text: v })}
-                    placeholder="質問内容"
-                    placeholderTextColor={colors.fgSub}
-                    maxLength={1000}
-                  />
-                  <TouchableOpacity onPress={() => removeQuestion(q.id)} style={{ padding: 4 }}>
-                    <Ionicons name="close-circle" size={22} color={colors.fgSub} />
-                  </TouchableOpacity>
-                </View>
-                <FormInput
-                  value={q.answer}
-                  onChangeText={(v) => updateQuestion(q.id, { answer: v })}
-                  placeholder="どう答えたか（任意）"
-                  multiline
+          {questions.map((q, i) => (
+            <View key={q.id} style={styles.qItem}>
+              <View style={styles.qTop}>
+                <Text style={styles.qNum}>Q{i + 1}</Text>
+                <TextInput
+                  style={styles.qInput}
+                  value={q.text}
+                  onChangeText={(v) => updateQuestion(q.id, { text: v })}
+                  placeholder="質問内容"
+                  placeholderTextColor={colors.fgSub}
+                  maxLength={1000}
                 />
+                <TouchableOpacity
+                  onPress={() => removeQuestion(q.id)}
+                  style={{ padding: 4 }}
+                  accessibilityLabel="質問を削除"
+                  activeOpacity={0.5}
+                >
+                  <Ionicons name="close-circle" size={22} color={colors.fgSub} />
+                </TouchableOpacity>
               </View>
-            ))}
+              <FormInput
+                value={q.answer}
+                onChangeText={(v) => updateQuestion(q.id, { answer: v })}
+                placeholder="どう答えたか（任意）"
+                multiline
+                inset
+              />
+            </View>
+          ))}
 
-            {suggestions.length > 0 && (
-              <View style={{ marginBottom: 12 }}>
-                <Text style={styles.suggestLabel}>よくある質問から追加</Text>
-                <View style={styles.suggestRow}>
-                  {suggestions.slice(0, 10).map((t) => (
-                    <TouchableOpacity key={t} style={styles.suggestChip} onPress={() => addQuestion(t)}>
-                      <Text style={styles.suggestText}>＋ {t}</Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
+          {suggestions.length > 0 && (
+            <View style={{ marginBottom: 14 }}>
+              <Text style={styles.suggestLabel}>よくある質問から追加</Text>
+              <View style={styles.suggestRow}>
+                {suggestions.slice(0, 10).map((t) => (
+                  <TouchableOpacity key={t} style={styles.suggestChip} onPress={() => addQuestion(t)} activeOpacity={0.6}>
+                    <Ionicons name="add" size={14} color={colors.primary} />
+                    <Text style={styles.suggestText}>{t}</Text>
+                  </TouchableOpacity>
+                ))}
               </View>
-            )}
+            </View>
+          )}
 
-            <TouchableOpacity style={styles.addBtn} onPress={() => addQuestion()}>
-              <Ionicons name="add-circle-outline" size={18} color={colors.primary} />
-              <Text style={styles.addBtnText}>質問を追加</Text>
-            </TouchableOpacity>
-          </Card>
+          <TouchableOpacity style={styles.addBtn} onPress={() => addQuestion()} activeOpacity={0.6}>
+            <Ionicons name="add-circle" size={20} color={colors.primary} />
+            <Text style={styles.addBtnText}>質問を追加</Text>
+          </TouchableOpacity>
 
           {/* 振り返り */}
           <SectionTitle>自分の回答・振り返り</SectionTitle>
           <View style={styles.carryHint}>
-            <Ionicons name="arrow-forward-circle" size={16} color={colors.primary} />
+            <Ionicons name="arrow-forward-circle" size={18} color={colors.primary} />
             <Text style={styles.carryHintText}>
               「詰まった質問」「反応が良かった話」「改善点」は、次の選考に自動で引き継がれます。1行に1つずつ書いてください。
             </Text>
           </View>
-          <Card>
-            <View style={styles.formGroup}>
-              <FormLabel>回答内容</FormLabel>
-              <FormInput value={answerNotes} onChangeText={setAnswerNotes} placeholder="全体としてどんな話をしたか" multiline />
-            </View>
-            <View style={styles.formGroup}>
-              <FormLabel>うまく答えられたこと</FormLabel>
-              <FormInput value={goodPoints} onChangeText={setGoodPoints} placeholder="例: ガクチカは具体的なエピソードで話せた" multiline />
-            </View>
-            <View style={styles.formGroup}>
-              <FormLabel>🔄 詰まった質問</FormLabel>
-              <FormInput value={stuckPoints} onChangeText={setStuckPoints} placeholder="例: なぜIT業界なのか" multiline />
-            </View>
-            <View style={styles.formGroup}>
-              <FormLabel>⭐ 面接官の反応が良かった話</FormLabel>
-              <FormInput value={positiveReactions} onChangeText={setPositiveReactions} placeholder="例: USJでの接客経験" multiline />
-            </View>
-            <View>
-              <FormLabel>⚠️ 改善点</FormLabel>
-              <FormInput value={improvements} onChangeText={setImprovements} placeholder="例: IT業界を志望する理由をもっと具体化" multiline />
-            </View>
-          </Card>
+          <View style={styles.formGroup}>
+            <FormLabel>回答内容</FormLabel>
+            <FormInput value={answerNotes} onChangeText={setAnswerNotes} placeholder="全体としてどんな話をしたか" multiline />
+          </View>
+          <View style={styles.formGroup}>
+            <FormLabel>うまく答えられたこと</FormLabel>
+            <FormInput value={goodPoints} onChangeText={setGoodPoints} placeholder="例: ガクチカは具体的なエピソードで話せた" multiline />
+          </View>
+          <View style={styles.formGroup}>
+            <FormLabel>🔄 詰まった質問</FormLabel>
+            <FormInput value={stuckPoints} onChangeText={setStuckPoints} placeholder="例: なぜIT業界なのか" multiline />
+          </View>
+          <View style={styles.formGroup}>
+            <FormLabel>⭐ 面接官の反応が良かった話</FormLabel>
+            <FormInput value={positiveReactions} onChangeText={setPositiveReactions} placeholder="例: USJでの接客経験" multiline />
+          </View>
+          <View>
+            <FormLabel>⚠️ 改善点</FormLabel>
+            <FormInput value={improvements} onChangeText={setImprovements} placeholder="例: IT業界を志望する理由をもっと具体化" multiline />
+          </View>
 
           {/* 自己評価 */}
           <SectionTitle>自己評価</SectionTitle>
-          <Card>
+          <View style={styles.block}>
             {(Object.keys(SELF_RATING_LABELS) as SelfRatingKey[]).map((k, i, arr) => (
-              <View key={k} style={[styles.rateRow, i === arr.length - 1 && { borderBottomWidth: 0, paddingBottom: 0 }]}>
+              <View key={k} style={[styles.rateRow, i === arr.length - 1 && { borderBottomWidth: 0 }]}>
                 <Text style={styles.rateLabel}>{SELF_RATING_LABELS[k]}</Text>
                 <StarRating value={ratings[k]} onChange={(v) => setRatings((p) => ({ ...p, [k]: v }))} />
               </View>
             ))}
-            <Text style={styles.rateHint}>★2以下の項目は、次の選考で「改善する」として引き継がれます</Text>
-          </Card>
+          </View>
+          <Text style={styles.rateHint}>★2以下の項目は、次の選考で「改善する」として引き継がれます</Text>
 
-          <View style={{ height: 20 }} />
+          <View style={{ height: 32 }} />
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -287,60 +283,45 @@ function ReviewForm() {
 
 const makeStyles = (colors: Colors) => StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bg },
-  header: {
-    flexDirection: 'row', alignItems: 'center',
-    paddingHorizontal: spacing.md, paddingVertical: 12,
-    backgroundColor: colors.surface,
-    borderBottomWidth: 1, borderBottomColor: colors.border,
-  },
-  headerTitle: { fontSize: 16, fontWeight: '700', color: colors.fg },
-  headerSub: { fontSize: 11, color: colors.fgMuted },
-  cancelBtn: { minWidth: 70 },
-  cancelBtnText: { fontSize: 15, color: colors.fgMuted, fontWeight: '500' },
-  saveBtn: {
-    minWidth: 70, alignItems: 'center', justifyContent: 'center',
-    backgroundColor: colors.primary, paddingHorizontal: 14,
-    paddingVertical: 7, borderRadius: radius.sm,
-  },
-  saveBtnText: { fontSize: 15, color: '#fff', fontWeight: '700', textAlign: 'center' },
 
-  content: { padding: spacing.md },
-  formGroup: { marginBottom: 14 },
-  formRow: { flexDirection: 'row', gap: 10, marginBottom: 14 },
+  content: { ...readable, paddingHorizontal: spacing.screen, paddingBottom: 24 },
+  formGroup: { marginBottom: 18 },
+  formRow: { flexDirection: 'row', gap: 10, marginBottom: 18 },
 
-  qItem: { borderBottomWidth: 1, borderBottomColor: colors.border, paddingBottom: 12, marginBottom: 12 },
+  qItem: { backgroundColor: colors.surface, borderRadius: radius.md, padding: 12, marginBottom: 10 },
   qTop: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 },
-  qNum: { fontSize: 13, fontWeight: '800', color: colors.primary, width: 26 },
+  qNum: { fontSize: 14, fontWeight: '800', color: colors.primary, width: 28, textAlign: 'center' },
   qInput: {
-    flex: 1, borderWidth: 1, borderColor: colors.border,
-    borderRadius: radius.sm, paddingHorizontal: 12, paddingVertical: 9,
-    fontSize: 14, color: colors.fg, backgroundColor: colors.bg, fontWeight: '600',
+    flex: 1, borderRadius: radius.sm, paddingHorizontal: 12, paddingVertical: 10,
+    fontSize: 16, color: colors.fg, backgroundColor: colors.bg, fontWeight: '600',
   },
-  suggestLabel: { fontSize: 12, color: colors.fgMuted, marginBottom: 6 },
-  suggestRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+  suggestLabel: { fontSize: 13, color: colors.fgMuted, fontWeight: '600', marginBottom: 8, marginTop: 4 },
+  suggestRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   suggestChip: {
-    paddingHorizontal: 10, paddingVertical: 5, borderRadius: radius.full,
-    backgroundColor: colors.surface2,
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    paddingHorizontal: 12, paddingVertical: 7, borderRadius: radius.full,
+    backgroundColor: colors.surface,
   },
-  suggestText: { fontSize: 12, color: colors.fgMuted, fontWeight: '500' },
+  suggestText: { fontSize: 13, color: colors.fg, fontWeight: '500' },
   addBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    gap: 6, paddingVertical: 12, borderRadius: radius.sm,
-    borderWidth: 1, borderColor: colors.primary, borderStyle: 'dashed',
+    gap: 6, paddingVertical: 14, borderRadius: radius.md,
+    backgroundColor: colors.primaryLight,
   },
-  addBtnText: { fontSize: 14, fontWeight: '600', color: colors.primary },
+  addBtnText: { fontSize: 15, fontWeight: '700', color: colors.primary },
 
   carryHint: {
     flexDirection: 'row', gap: 8, alignItems: 'flex-start',
-    backgroundColor: colors.primaryLight, borderRadius: radius.sm,
-    padding: 10, marginBottom: 10,
+    backgroundColor: colors.primaryLight, borderRadius: radius.md,
+    padding: 12, marginBottom: 18,
   },
-  carryHintText: { flex: 1, fontSize: 12, lineHeight: 18, color: colors.primary },
+  carryHintText: { flex: 1, fontSize: 13, lineHeight: 19, color: colors.fg },
 
+  block: { backgroundColor: colors.surface, borderRadius: radius.md, paddingHorizontal: spacing.md },
   rateRow: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingBottom: 12, marginBottom: 12, borderBottomWidth: 1, borderBottomColor: colors.border,
+    paddingVertical: 13, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border,
   },
-  rateLabel: { fontSize: 14, fontWeight: '500', color: colors.fg },
-  rateHint: { fontSize: 11, color: colors.fgSub, marginTop: 12 },
+  rateLabel: { fontSize: 15, fontWeight: '500', color: colors.fg },
+  rateHint: { fontSize: 12, color: colors.fgSub, marginTop: 8, lineHeight: 17 },
 });

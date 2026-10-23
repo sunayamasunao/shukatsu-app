@@ -5,16 +5,19 @@ import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useCompanies } from '@/src/context/CompaniesContext';
 import { useTheme, useThemedStyles } from '@/src/context/ThemeContext';
-import { Colors, radius, shadow, spacing } from '@/src/theme';
+import { Colors, radius, readable, spacing, type } from '@/src/theme';
 import { EvalKey } from '@/src/types';
 import { DEFAULT_WEIGHTS, EVAL_KEYS, EVAL_LABELS, STATUS_LABEL } from '@/src/constants';
 import { compatibilityScore, latestMotivation } from '@/src/utils';
 import { StarText } from '@/src/components/StarRating';
+import { EmptyState, LargeTitle, ProgressBar, Section, Segmented } from '@/src/components/ui';
 
 type Scope = 'offer' | 'all';
 
-const LABEL_W = 96;
-const COL_W = 112;
+const LABEL_W = 108;
+const COL_W = 116;
+const HEAD_H = 56;
+const ROW_H = 50;
 
 export default function CompareScreen() {
   const { colors } = useTheme();
@@ -46,214 +49,260 @@ export default function CompareScreen() {
   // 各行の最高評価を強調
   const bestOf = (k: EvalKey) => Math.max(0, ...ranked.map((r) => r.company.evaluation?.[k] ?? 0));
 
+  // 1位（スコアが確定している場合のみ）は大きく見せる
+  const leader = ranked[0] && ranked[0].score != null && !ranked[0].tentative ? ranked[0] : null;
+  const rest = leader ? ranked.slice(1) : ranked;
+  const tableKeys = EVAL_KEYS.filter((k) => k !== 'motivation');
+
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.content}>
-        <View style={styles.header}>
-          <Text style={styles.title}>内定比較</Text>
-          <Text style={styles.subtitle}>「自分が何を重視するか」×「自分の評価」で相性を計算します</Text>
-        </View>
+        <LargeTitle
+          title="内定比較"
+          subtitle="「自分が何を重視するか」×「自分の評価」で相性を計算します"
+        />
 
         {/* 対象切り替え */}
-        <View style={styles.scopeRow}>
-          {([['offer', `内定企業（${offerCount}）`], ['all', '選考中も含める']] as [Scope, string][]).map(([v, label]) => (
-            <TouchableOpacity
-              key={v}
-              style={[styles.chip, effectiveScope === v && styles.chipActive]}
-              onPress={() => setScope(v)}
-            >
-              <Text style={[styles.chipText, effectiveScope === v && styles.chipTextActive]}>{label}</Text>
-            </TouchableOpacity>
-          ))}
+        <View style={{ marginBottom: spacing.lg }}>
+          <Segmented
+            value={effectiveScope}
+            onChange={setScope}
+            options={[
+              { value: 'offer', label: `内定企業（${offerCount}）` },
+              { value: 'all', label: '選考中も含める' },
+            ]}
+          />
         </View>
 
         {ranked.length === 0 ? (
-          <View style={styles.empty}>
-            <Text style={styles.emptyIcon}>🏆</Text>
-            <Text style={styles.emptyTitle}>
-              {effectiveScope === 'offer' ? 'まだ内定企業がありません' : '比較できる企業がありません'}
-            </Text>
-            <Text style={styles.emptySub}>
-              企業カルテで「自分の評価」を付けると、ここで比較できます
-            </Text>
-          </View>
+          <EmptyState
+            icon="podium-outline"
+            title={effectiveScope === 'offer' ? 'まだ内定企業がありません' : '比較できる企業がありません'}
+            message="企業カルテで「自分の評価」を付けると、ここで比較できます"
+          />
         ) : (
           <>
             {/* 相性スコア */}
-            <Text style={styles.sectionTitle}>自分との相性スコア</Text>
-            {ranked.map(({ company, score, missing, tentative }, i) => (
-              <TouchableOpacity
-                key={company.id}
-                style={styles.scoreCard}
-                activeOpacity={0.8}
-                onPress={() => router.push(`/detail/${company.id}`)}
-              >
-                <Text style={[styles.rank, i === 0 && score != null && !tentative && { color: colors.warning }]}>
-                  {i === 0 && score != null && !tentative ? '👑' : `${i + 1}`}
-                </Text>
-                <View style={{ flex: 1 }}>
-                  <View style={styles.scoreTop}>
-                    <Text style={styles.scoreName} numberOfLines={1}>{company.name}</Text>
-                    <Text style={styles.scoreStatus}>{STATUS_LABEL[company.status]}</Text>
+            <Section title="自分との相性スコア">
+              {leader && (
+                <TouchableOpacity
+                  style={styles.hero}
+                  activeOpacity={0.7}
+                  onPress={() => router.push(`/detail/${leader.company.id}`)}
+                >
+                  <Text style={styles.heroCaption}>1位・いちばん相性が良い企業</Text>
+                  <View style={styles.heroRow}>
+                    <View style={{ flex: 1, minWidth: 0 }}>
+                      <Text style={styles.heroName} numberOfLines={2}>{leader.company.name}</Text>
+                      <Text style={styles.heroStatus}>{STATUS_LABEL[leader.company.status]}</Text>
+                    </View>
+                    <Text style={styles.heroScore}>
+                      {leader.score}<Text style={styles.heroUnit}> 点</Text>
+                    </Text>
                   </View>
-                  <View style={styles.barTrack}>
-                    <View style={[styles.barFill, { width: `${score ?? 0}%` }, tentative && { backgroundColor: colors.fgSub }]} />
-                  </View>
-                  {missing.length > 0 && (
-                    <Text style={styles.missing} numberOfLines={1}>
-                      未評価: {missing.map((k) => EVAL_LABELS[k]).join('・')}
+                  <ProgressBar value={(leader.score ?? 0) / 100} height={8} style={{ marginTop: 14 }} />
+                  {leader.missing.length > 0 && (
+                    <Text style={styles.missing} numberOfLines={2}>
+                      未評価: {leader.missing.map((k) => EVAL_LABELS[k]).join('・')}
                     </Text>
                   )}
-                </View>
-                <View style={{ alignItems: 'flex-end' }}>
-                  <Text style={[styles.scoreNum, tentative && { color: colors.fgSub }]}>
-                    {score ?? '-'}<Text style={styles.scoreUnit}>{score != null ? '点' : ''}</Text>
-                  </Text>
-                  {tentative && <Text style={styles.tentative}>参考値</Text>}
-                </View>
-              </TouchableOpacity>
-            ))}
+                </TouchableOpacity>
+              )}
 
-            {/* 比較表 */}
-            <Text style={styles.sectionTitle}>比較表</Text>
-            <View style={styles.tableCard}>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-                <View>
-                  <View style={[styles.tr, styles.trHead]}>
-                    <View style={[styles.th, { width: LABEL_W }]} />
-                    {ranked.map(({ company }) => (
-                      <TouchableOpacity
-                        key={company.id}
-                        style={[styles.th, { width: COL_W }]}
-                        onPress={() => router.push(`/detail/${company.id}`)}
-                      >
-                        <Text style={styles.thText} numberOfLines={2}>{company.name}</Text>
-                      </TouchableOpacity>
-                    ))}
-                  </View>
-                  {EVAL_KEYS.filter((k) => k !== 'motivation').map((k) => {
-                    const best = bestOf(k);
-                    return (
-                      <View key={k} style={styles.tr}>
-                        <View style={[styles.td, { width: LABEL_W }]}>
-                          <Text style={styles.rowLabel} numberOfLines={2}>{EVAL_LABELS[k]}</Text>
-                          <Text style={styles.rowWeight}>{weights[k] ?? 0}%</Text>
-                        </View>
-                        {ranked.map(({ company }) => {
-                          const v = company.evaluation?.[k] ?? 0;
-                          return (
-                            <View
-                              key={company.id}
-                              style={[styles.td, { width: COL_W }, v > 0 && v === best && ranked.length > 1 && styles.tdBest]}
-                            >
-                              <StarText value={v} />
-                            </View>
-                          );
-                        })}
+              {rest.map(({ company, score, missing, tentative }, j) => {
+                const i = leader ? j + 1 : j;
+                return (
+                  <TouchableOpacity
+                    key={company.id}
+                    style={[styles.scoreRow, j === rest.length - 1 && { borderBottomWidth: 0 }]}
+                    activeOpacity={0.6}
+                    onPress={() => router.push(`/detail/${company.id}`)}
+                  >
+                    <Text style={styles.rank}>{i + 1}</Text>
+                    <View style={{ flex: 1, minWidth: 0 }}>
+                      <View style={styles.scoreTop}>
+                        <Text style={styles.scoreName} numberOfLines={1}>{company.name}</Text>
+                        <Text style={styles.scoreStatus}>{STATUS_LABEL[company.status]}</Text>
                       </View>
-                    );
-                  })}
-                  <View style={styles.tr}>
-                    <View style={[styles.td, { width: LABEL_W }]}>
-                      <Text style={styles.rowLabel}>志望度</Text>
-                      <Text style={styles.rowWeight}>{weights.motivation ?? 0}%</Text>
+                      <ProgressBar value={(score ?? 0) / 100} tone={tentative ? 'neutral' : 'primary'} height={5} />
+                      {missing.length > 0 && (
+                        <Text style={styles.missing} numberOfLines={1}>
+                          未評価: {missing.map((k) => EVAL_LABELS[k]).join('・')}
+                        </Text>
+                      )}
                     </View>
-                    {ranked.map(({ company }) => {
-                      const m = latestMotivation(company);
+                    <View style={{ alignItems: 'flex-end', minWidth: 56 }}>
+                      <Text style={[styles.scoreNum, tentative && { color: colors.fgSub }]}>
+                        {score ?? '-'}<Text style={styles.scoreUnit}>{score != null ? '点' : ''}</Text>
+                      </Text>
+                      {tentative && <Text style={styles.tentative}>参考値</Text>}
+                    </View>
+                  </TouchableOpacity>
+                );
+              })}
+            </Section>
+
+            {/* 比較表（左の項目名は固定し、企業の列だけ横にスクロール） */}
+            <Section title="比較表">
+              <View style={styles.table}>
+                <View style={[styles.labelCol, { width: LABEL_W }]}>
+                  <View style={[styles.cell, styles.headCell, { height: HEAD_H }]} />
+                  {tableKeys.map((k) => (
+                    <View key={k} style={[styles.cell, styles.labelCell, { height: ROW_H }]}>
+                      <Text style={styles.rowLabel} numberOfLines={2}>{EVAL_LABELS[k]}</Text>
+                      <Text style={styles.rowWeight}>重み {weights[k] ?? 0}%</Text>
+                    </View>
+                  ))}
+                  <View style={[styles.cell, styles.labelCell, { height: ROW_H }]}>
+                    <Text style={styles.rowLabel}>志望度</Text>
+                    <Text style={styles.rowWeight}>重み {weights.motivation ?? 0}%</Text>
+                  </View>
+                  <View style={[styles.cell, styles.labelCell, { height: ROW_H, borderBottomWidth: 0 }]}>
+                    <Text style={[styles.rowLabel, { fontWeight: '800' }]}>相性スコア</Text>
+                  </View>
+                </View>
+
+                <ScrollView horizontal showsHorizontalScrollIndicator={ranked.length > 2} style={{ flex: 1 }}>
+                  <View>
+                    <View style={styles.tr}>
+                      {ranked.map(({ company }) => (
+                        <TouchableOpacity
+                          key={company.id}
+                          style={[styles.cell, styles.headCell, { width: COL_W, height: HEAD_H }]}
+                          onPress={() => router.push(`/detail/${company.id}`)}
+                          activeOpacity={0.6}
+                        >
+                          <Text style={styles.thText} numberOfLines={2}>{company.name}</Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                    {tableKeys.map((k) => {
+                      const best = bestOf(k);
                       return (
-                        <View key={company.id} style={[styles.td, { width: COL_W }]}>
-                          <Text style={styles.motivation}>{m != null ? `${m}%` : '-'}</Text>
+                        <View key={k} style={styles.tr}>
+                          {ranked.map(({ company }) => {
+                            const v = company.evaluation?.[k] ?? 0;
+                            const isBest = v > 0 && v === best && ranked.length > 1;
+                            return (
+                              <View key={company.id} style={[styles.cell, { width: COL_W, height: ROW_H }]}>
+                                <View style={[styles.cellInner, isBest && styles.tdBest]}>
+                                  <StarText value={v} size={14} />
+                                </View>
+                              </View>
+                            );
+                          })}
                         </View>
                       );
                     })}
-                  </View>
-                  <View style={[styles.tr, { borderBottomWidth: 0 }]}>
-                    <View style={[styles.td, { width: LABEL_W }]}>
-                      <Text style={[styles.rowLabel, { fontWeight: '700' }]}>相性スコア</Text>
+                    <View style={styles.tr}>
+                      {ranked.map(({ company }) => {
+                        const m = latestMotivation(company);
+                        return (
+                          <View key={company.id} style={[styles.cell, { width: COL_W, height: ROW_H }]}>
+                            <Text style={styles.motivation}>{m != null ? `${m}%` : '-'}</Text>
+                          </View>
+                        );
+                      })}
                     </View>
-                    {ranked.map(({ company, score, tentative }) => (
-                      <View key={company.id} style={[styles.td, { width: COL_W }]}>
-                        <Text style={[styles.tableScore, tentative && { color: colors.fgSub }]}>{score ?? '-'}</Text>
-                        {tentative && <Text style={styles.tentative}>参考値</Text>}
-                      </View>
-                    ))}
+                    <View style={styles.tr}>
+                      {ranked.map(({ company, score, tentative }) => (
+                        <View key={company.id} style={[styles.cell, { width: COL_W, height: ROW_H, borderBottomWidth: 0 }]}>
+                          <Text style={[styles.tableScore, tentative && { color: colors.fgSub }]}>{score ?? '-'}</Text>
+                          {tentative && <Text style={styles.tentativeSmall}>参考値</Text>}
+                        </View>
+                      ))}
+                    </View>
                   </View>
-                </View>
-              </ScrollView>
-            </View>
-            <Text style={styles.hint}>企業名をタップすると企業カルテで評価を編集できます</Text>
-            {ranked.some((r) => r.tentative) && (
-              <Text style={styles.hint}>「参考値」は重視する項目の半分以上が未評価のため、順位の後ろに表示しています</Text>
-            )}
+                </ScrollView>
+              </View>
+              <Text style={styles.hint}>企業名をタップすると企業カルテで評価を編集できます</Text>
+              {ranked.some((r) => r.tentative) && (
+                <Text style={styles.hint}>「参考値」は重視する項目の半分以上が未評価のため、順位の後ろに表示しています</Text>
+              )}
+            </Section>
           </>
         )}
 
         {/* 重視すること */}
-        <View style={styles.sectionRow}>
-          <Text style={[styles.sectionTitle, { marginTop: 0, marginBottom: 0 }]}>あなたが重視すること</Text>
-          <TouchableOpacity onPress={() => setWeights(DEFAULT_WEIGHTS)}>
-            <Text style={styles.resetText}>初期値に戻す</Text>
-          </TouchableOpacity>
-        </View>
-        <View style={styles.card}>
-          {EVAL_KEYS.map((k, i) => {
-            const w = weights[k] ?? 0;
-            const share = totalWeight > 0 ? Math.round((w / totalWeight) * 100) : 0;
-            return (
-              <View key={k} style={[styles.weightRow, i === EVAL_KEYS.length - 1 && { borderBottomWidth: 0 }]}>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.weightLabel}>{EVAL_LABELS[k]}</Text>
-                  <View style={styles.weightTrack}>
-                    <View style={[styles.weightFill, { width: `${share}%` }]} />
+        <Section
+          title="あなたが重視すること"
+          right={
+            <TouchableOpacity onPress={() => setWeights(DEFAULT_WEIGHTS)} hitSlop={8} activeOpacity={0.6}>
+              <Text style={styles.resetText}>初期値に戻す</Text>
+            </TouchableOpacity>
+          }
+        >
+          <View style={styles.group}>
+            {EVAL_KEYS.map((k, i) => {
+              const w = weights[k] ?? 0;
+              const share = totalWeight > 0 ? Math.round((w / totalWeight) * 100) : 0;
+              return (
+                <View key={k} style={[styles.weightRow, i === EVAL_KEYS.length - 1 && { borderBottomWidth: 0 }]}>
+                  <View style={{ flex: 1, minWidth: 0 }}>
+                    <Text style={styles.weightLabel} numberOfLines={1}>{EVAL_LABELS[k]}</Text>
+                    <ProgressBar value={share / 100} height={4} style={{ marginRight: 8 }} />
+                  </View>
+                  <View style={styles.stepper}>
+                    <TouchableOpacity
+                      style={styles.stepBtn}
+                      onPress={() => changeWeight(k, -5)}
+                      accessibilityLabel={`${EVAL_LABELS[k]}を下げる`}
+                      activeOpacity={0.5}
+                    >
+                      <Ionicons name="remove" size={18} color={colors.fg} />
+                    </TouchableOpacity>
+                    <Text style={styles.weightValue}>{w}%</Text>
+                    <TouchableOpacity
+                      style={styles.stepBtn}
+                      onPress={() => changeWeight(k, 5)}
+                      accessibilityLabel={`${EVAL_LABELS[k]}を上げる`}
+                      activeOpacity={0.5}
+                    >
+                      <Ionicons name="add" size={18} color={colors.fg} />
+                    </TouchableOpacity>
                   </View>
                 </View>
-                <TouchableOpacity style={styles.stepBtn} onPress={() => changeWeight(k, -5)}>
-                  <Ionicons name="remove" size={16} color={colors.primary} />
-                </TouchableOpacity>
-                <Text style={styles.weightValue}>{w}%</Text>
-                <TouchableOpacity style={styles.stepBtn} onPress={() => changeWeight(k, 5)}>
-                  <Ionicons name="add" size={16} color={colors.primary} />
-                </TouchableOpacity>
-              </View>
-            );
-          })}
+              );
+            })}
+          </View>
           <Text style={[styles.total, totalWeight !== 100 && { color: colors.warning }]}>
             合計 {totalWeight}%{totalWeight !== 100 ? '（合計が100%でなくても比率で計算します）' : ''}
           </Text>
-        </View>
+        </Section>
 
         {/* 意思決定メモ */}
         {ranked.some(({ company }) => company.status === 'offer') && (
-          <>
-            <Text style={styles.sectionTitle}>意思決定メモ</Text>
-            {ranked.filter(({ company }) => company.status === 'offer').map(({ company }) => (
-              <TouchableOpacity
-                key={company.id}
-                style={styles.card}
-                activeOpacity={0.8}
-                onPress={() => router.push(`/detail/${company.id}`)}
-              >
-                <View style={styles.decisionTop}>
-                  <Text style={styles.decisionName}>{company.name}</Text>
-                  <Text style={styles.resetText}>{company.decision ? '編集 ›' : 'メモを書く ›'}</Text>
-                </View>
-                {company.decision ? (
-                  ([
-                    ['選んだ理由', company.decision.reason],
-                    ['迷った理由', company.decision.hesitation],
-                    ['入社後に期待すること', company.decision.expectation],
-                  ] as const).filter(([, v]) => v).map(([label, v]) => (
-                    <View key={label} style={{ marginTop: 6 }}>
-                      <Text style={styles.decisionLabel}>{label}</Text>
-                      <Text style={styles.decisionText} numberOfLines={3}>{v}</Text>
-                    </View>
-                  ))
-                ) : (
-                  <Text style={styles.hint}>この企業を選んだ理由・迷った理由・入社後に期待することを残せます</Text>
-                )}
-              </TouchableOpacity>
-            ))}
-          </>
+          <Section title="意思決定メモ">
+            <View style={{ gap: 10 }}>
+              {ranked.filter(({ company }) => company.status === 'offer').map(({ company }) => (
+                <TouchableOpacity
+                  key={company.id}
+                  style={styles.memoCard}
+                  activeOpacity={0.7}
+                  onPress={() => router.push(`/detail/${company.id}`)}
+                >
+                  <View style={styles.decisionTop}>
+                    <Text style={styles.decisionName} numberOfLines={1}>{company.name}</Text>
+                    <Text style={styles.resetText}>{company.decision ? '編集 ›' : 'メモを書く ›'}</Text>
+                  </View>
+                  {company.decision ? (
+                    ([
+                      ['選んだ理由', company.decision.reason],
+                      ['迷った理由', company.decision.hesitation],
+                      ['入社後に期待すること', company.decision.expectation],
+                    ] as const).filter(([, v]) => v).map(([label, v]) => (
+                      <View key={label} style={{ marginTop: 10 }}>
+                        <Text style={styles.decisionLabel}>{label}</Text>
+                        <Text style={styles.decisionText} numberOfLines={3}>{v}</Text>
+                      </View>
+                    ))
+                  ) : (
+                    <Text style={styles.hint}>この企業を選んだ理由・迷った理由・入社後に期待することを残せます</Text>
+                  )}
+                </TouchableOpacity>
+              ))}
+            </View>
+          </Section>
         )}
       </ScrollView>
     </SafeAreaView>
@@ -262,92 +311,86 @@ export default function CompareScreen() {
 
 const makeStyles = (colors: Colors) => StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bg },
-  content: { padding: spacing.md, paddingBottom: 40 },
+  content: { ...readable, paddingHorizontal: spacing.screen, paddingBottom: spacing.tabBar },
 
-  header: { marginBottom: 12 },
-  title: { fontSize: 26, fontWeight: '700', color: colors.fg, letterSpacing: -0.5 },
-  subtitle: { fontSize: 13, color: colors.fgMuted, marginTop: 4, lineHeight: 19 },
+  resetText: { fontSize: 14, color: colors.primary, fontWeight: '600' },
+  hint: { fontSize: 12, color: colors.fgSub, marginTop: 8, lineHeight: 18 },
 
-  scopeRow: { flexDirection: 'row', gap: 8, marginBottom: 4 },
-  chip: {
-    paddingHorizontal: 16, paddingVertical: 7, borderRadius: radius.full,
-    backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border,
+  hero: {
+    backgroundColor: colors.surface, borderRadius: radius.lg,
+    padding: spacing.md + 4, marginBottom: 8,
   },
-  chipActive: { backgroundColor: colors.primaryLight, borderColor: colors.primary },
-  chipText: { fontSize: 13, fontWeight: '500', color: colors.fgMuted },
-  chipTextActive: { color: colors.primary, fontWeight: '600' },
+  heroCaption: { fontSize: 13, fontWeight: '600', color: colors.fgMuted, marginBottom: 6 },
+  heroRow: { flexDirection: 'row', alignItems: 'flex-end', gap: 12 },
+  heroName: { ...type.title, color: colors.fg },
+  heroStatus: { fontSize: 13, color: colors.fgMuted, marginTop: 2 },
+  heroScore: { ...type.number, fontSize: 48, lineHeight: 54, color: colors.primary },
+  heroUnit: { fontSize: 16, fontWeight: '700', color: colors.fgMuted, letterSpacing: 0 },
 
-  sectionTitle: {
-    fontSize: 12, fontWeight: '700', color: colors.fgMuted,
-    letterSpacing: 0.8, textTransform: 'uppercase', marginTop: 20, marginBottom: 8,
+  scoreRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 14,
+    paddingVertical: 14,
+    borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border,
   },
-  sectionRow: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    marginTop: 20, marginBottom: 8,
+  rank: {
+    width: 22, fontSize: 17, fontWeight: '800', color: colors.fgSub, textAlign: 'center',
+    fontVariant: ['tabular-nums'],
   },
-  resetText: { fontSize: 13, color: colors.primary, fontWeight: '600' },
-  hint: { fontSize: 12, color: colors.fgSub, marginTop: 4, lineHeight: 18 },
-
-  card: {
-    backgroundColor: colors.surface, borderRadius: radius.md,
-    padding: spacing.md, ...shadow, marginBottom: 10,
-  },
-
-  scoreCard: {
-    flexDirection: 'row', alignItems: 'center', gap: 12,
-    backgroundColor: colors.surface, borderRadius: radius.md,
-    padding: spacing.md, ...shadow, marginBottom: 10,
-  },
-  rank: { width: 26, fontSize: 18, fontWeight: '800', color: colors.fgSub, textAlign: 'center' },
-  scoreTop: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 6 },
-  scoreName: { flex: 1, fontSize: 15, fontWeight: '700', color: colors.fg },
-  scoreStatus: { fontSize: 11, color: colors.fgMuted },
-  barTrack: { height: 6, backgroundColor: colors.surface2, borderRadius: 3, overflow: 'hidden' },
-  barFill: { height: '100%', backgroundColor: colors.primary, borderRadius: 3 },
-  missing: { fontSize: 11, color: colors.warning, marginTop: 4 },
+  scoreTop: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 },
+  scoreName: { flex: 1, fontSize: 16, fontWeight: '700', color: colors.fg },
+  scoreStatus: { fontSize: 12, color: colors.fgMuted },
+  missing: { fontSize: 12, color: colors.warning, marginTop: 6 },
   tentative: {
-    fontSize: 10, fontWeight: '700', color: colors.fgMuted, marginTop: 2,
-    backgroundColor: colors.surface2, paddingHorizontal: 6, paddingVertical: 1, borderRadius: radius.full,
+    fontSize: 10, fontWeight: '700', color: colors.fgMuted, marginTop: 3,
+    backgroundColor: colors.surface, paddingHorizontal: 6, paddingVertical: 1, borderRadius: radius.full,
     overflow: 'hidden',
   },
-  scoreNum: { fontSize: 26, fontWeight: '800', color: colors.primary, minWidth: 56, textAlign: 'right' },
-  scoreUnit: { fontSize: 12, fontWeight: '600', color: colors.fgMuted },
+  tentativeSmall: { fontSize: 10, fontWeight: '700', color: colors.fgMuted, marginTop: 1 },
+  scoreNum: { ...type.number, fontSize: 24, color: colors.fg },
+  scoreUnit: { fontSize: 12, fontWeight: '600', color: colors.fgMuted, letterSpacing: 0 },
 
-  tableCard: {
-    backgroundColor: colors.surface, borderRadius: radius.md, ...shadow, overflow: 'hidden',
+  table: {
+    flexDirection: 'row', backgroundColor: colors.surface, borderRadius: radius.md, overflow: 'hidden',
   },
-  tr: { flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: colors.border },
-  trHead: { backgroundColor: colors.surface2 },
-  th: { paddingVertical: 10, paddingHorizontal: 8, justifyContent: 'center' },
-  thText: { fontSize: 12, fontWeight: '700', color: colors.fg, textAlign: 'center' },
-  td: { paddingVertical: 10, paddingHorizontal: 8, justifyContent: 'center', alignItems: 'center' },
+  labelCol: {
+    borderRightWidth: StyleSheet.hairlineWidth, borderRightColor: colors.border,
+  },
+  tr: { flexDirection: 'row' },
+  cell: {
+    paddingHorizontal: 10, justifyContent: 'center', alignItems: 'center',
+    borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border,
+  },
+  headCell: { backgroundColor: colors.surface2 },
+  labelCell: { alignItems: 'flex-start' },
+  cellInner: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: radius.full },
   tdBest: { backgroundColor: colors.primaryLight },
-  rowLabel: { fontSize: 12, fontWeight: '600', color: colors.fg, alignSelf: 'flex-start' },
-  rowWeight: { fontSize: 10, color: colors.fgSub, alignSelf: 'flex-start', marginTop: 1 },
-  motivation: { fontSize: 14, fontWeight: '700', color: colors.primary },
-  tableScore: { fontSize: 18, fontWeight: '800', color: colors.fg },
+  thText: { fontSize: 13, fontWeight: '700', color: colors.fg, textAlign: 'center' },
+  rowLabel: { fontSize: 13, fontWeight: '600', color: colors.fg },
+  rowWeight: { fontSize: 11, color: colors.fgSub, marginTop: 2, fontVariant: ['tabular-nums'] },
+  motivation: { fontSize: 15, fontWeight: '700', color: colors.primary, fontVariant: ['tabular-nums'] },
+  tableScore: { ...type.number, fontSize: 20, color: colors.fg },
 
+  group: { backgroundColor: colors.surface, borderRadius: radius.md, paddingHorizontal: spacing.md },
   weightRow: {
     flexDirection: 'row', alignItems: 'center', gap: 8,
-    paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: colors.border,
+    paddingVertical: 12,
+    borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border,
   },
-  weightLabel: { fontSize: 14, fontWeight: '500', color: colors.fg, marginBottom: 6 },
-  weightTrack: { height: 4, backgroundColor: colors.surface2, borderRadius: 2, overflow: 'hidden', marginRight: 8 },
-  weightFill: { height: '100%', backgroundColor: colors.primary },
-  stepBtn: {
-    width: 30, height: 30, borderRadius: 15, backgroundColor: colors.primaryLight,
-    alignItems: 'center', justifyContent: 'center',
+  weightLabel: { fontSize: 15, fontWeight: '500', color: colors.fg, marginBottom: 8 },
+  stepper: {
+    flexDirection: 'row', alignItems: 'center',
+    backgroundColor: colors.elevated, borderRadius: radius.full,
   },
-  weightValue: { width: 44, textAlign: 'center', fontSize: 15, fontWeight: '700', color: colors.fg },
-  total: { fontSize: 12, color: colors.fgMuted, marginTop: 10, textAlign: 'right' },
+  stepBtn: { width: 38, height: 34, alignItems: 'center', justifyContent: 'center' },
+  weightValue: {
+    width: 44, textAlign: 'center', fontSize: 15, fontWeight: '700', color: colors.fg,
+    fontVariant: ['tabular-nums'],
+  },
+  total: { fontSize: 12, color: colors.fgMuted, marginTop: 8, textAlign: 'right' },
 
-  decisionTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  decisionName: { fontSize: 15, fontWeight: '700', color: colors.fg, flex: 1 },
-  decisionLabel: { fontSize: 11, color: colors.fgMuted, fontWeight: '600' },
-  decisionText: { fontSize: 13, color: colors.fg, lineHeight: 19 },
-
-  empty: { alignItems: 'center', paddingVertical: 48, gap: 10 },
-  emptyIcon: { fontSize: 48 },
-  emptyTitle: { fontSize: 16, fontWeight: '700', color: colors.fg },
-  emptySub: { fontSize: 13, color: colors.fgMuted, textAlign: 'center', paddingHorizontal: 24, lineHeight: 20 },
+  memoCard: { backgroundColor: colors.surface, borderRadius: radius.md, padding: spacing.md },
+  decisionTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
+  decisionName: { fontSize: 16, fontWeight: '700', color: colors.fg, flex: 1 },
+  decisionLabel: { fontSize: 12, color: colors.fgMuted, fontWeight: '600' },
+  decisionText: { fontSize: 14, color: colors.fg, lineHeight: 21, marginTop: 2 },
 });

@@ -18,10 +18,12 @@ interface DateInputProps {
   placeholder?: string;
   mode?: 'date' | 'time';
   clearable?: boolean;
+  /** 塗りのブロックの中に置くとき（背景色を一段変える） */
+  inset?: boolean;
 }
 
 export function DateInput({
-  value, onChange, placeholder, mode = 'date', clearable = false,
+  value, onChange, placeholder, mode = 'date', clearable = false, inset = false,
 }: DateInputProps) {
   const { colors, isDark } = useTheme();
   const styles = useThemedStyles(makeStyles);
@@ -43,12 +45,12 @@ export function DateInput({
 
   return (
     <View>
-      <TouchableOpacity style={styles.btn} onPress={() => setShow(true)} activeOpacity={0.7}>
-        <Ionicons name={mode === 'time' ? 'time-outline' : 'calendar-outline'} size={15} color={colors.fgMuted} />
-        <Text style={[value ? styles.valueText : styles.placeholder, { flex: 1 }]}>{label}</Text>
+      <TouchableOpacity style={[styles.btn, inset && styles.btnInset]} onPress={() => setShow(true)} activeOpacity={0.6}>
+        <Ionicons name={mode === 'time' ? 'time-outline' : 'calendar-outline'} size={16} color={value ? colors.primary : colors.fgSub} />
+        <Text style={[value ? styles.valueText : styles.placeholder, { flex: 1 }]} numberOfLines={1}>{label}</Text>
         {clearable && value ? (
           <TouchableOpacity onPress={() => onChange('')} hitSlop={8}>
-            <Ionicons name="close-circle" size={16} color={colors.fgSub} />
+            <Ionicons name="close-circle" size={18} color={colors.fgSub} />
           </TouchableOpacity>
         ) : null}
       </TouchableOpacity>
@@ -80,32 +82,30 @@ const makeStyles = (colors: Colors) => StyleSheet.create({
     alignItems: 'center',
     gap: spacing.sm,
     backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
     borderRadius: radius.sm,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    minHeight: 46,
   },
+  btnInset: { backgroundColor: colors.bg },
   placeholder: {
-    fontSize: 14,
+    fontSize: 15,
     color: colors.fgSub,
   },
   valueText: {
-    fontSize: 14,
+    fontSize: 15,
     color: colors.fg,
     fontWeight: '500',
   },
   doneBtn: {
     alignSelf: 'flex-end',
     marginTop: 4,
-    backgroundColor: colors.primary,
-    paddingHorizontal: 20,
+    paddingHorizontal: 16,
     paddingVertical: 8,
-    borderRadius: radius.sm,
   },
   doneBtnText: {
-    color: '#fff',
-    fontWeight: '600',
-    fontSize: 14,
+    color: colors.primary,
+    fontWeight: '700',
+    fontSize: 16,
   },
 });

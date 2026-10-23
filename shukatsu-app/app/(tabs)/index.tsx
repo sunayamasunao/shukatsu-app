@@ -1,7 +1,8 @@
 import React, { useCallback, useMemo, useState } from 'react';
 import {
+  ActionSheetIOS,
   FlatList,
-  ScrollView,
+  Platform,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -11,13 +12,17 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useCompanies } from '@/src/context/CompaniesContext';
-import { Colors, radius, shadow, spacing } from '@/src/theme';
+import { Colors, readable, spacing, toneColors, type } from '@/src/theme';
 import { useTheme, useThemedStyles } from '@/src/context/ThemeContext';
 import { Company, CompanyStatus } from '@/src/types';
 import { TodaySection, UpcomingSection } from '@/src/components/HomeSections';
 import { SyncBanner } from '@/src/components/SyncBanner';
+import { EmptyState, IconButton, LargeTitle, PrimaryButton } from '@/src/components/ui';
 import {
-  compareCompanyName, daysUntil, formatDateShort, industryOrder, nearestDeadline, selectionDate,
+  companyInitial, companyStatusTone, daysTone, formatDateJa,
+} from '@/src/presentation';
+import {
+  compareCompanyName, daysUntil, formatDateShort, industryOrder, nearestDeadline, selectionDate, todayStr,
 } from '@/src/utils';
 
 type SortMode = 'deadline' | 'industry' | 'company' | 'status';
@@ -28,24 +33,17 @@ const STATUS_LABEL: Record<CompanyStatus, string> = {
   declined: '辞退',
   rejected: '不合格',
 };
-const STATUS_COLOR_FOR = (colors: Colors): Record<CompanyStatus, { bg: string; text: string }> => ({
-  active: { bg: colors.primaryLight, text: colors.primary },
-  offer: { bg: colors.successLight, text: colors.success },
-  declined: { bg: colors.surface2, text: colors.fgSub },
-  rejected: { bg: colors.dangerLight, text: colors.danger },
-});
-const STATUS_BORDER_FOR = (colors: Colors): Record<CompanyStatus, string> => ({
-  active: colors.primary,
-  offer: colors.success,
-  declined: colors.border,
-  rejected: colors.danger,
-});
+
+const SORT_OPTIONS: [SortMode, string][] = [
+  ['deadline', '締め切り順'],
+  ['industry', '業界別'],
+  ['company', '企業名順'],
+  ['status', 'ステータス'],
+];
 
 export default function HomeScreen() {
   const { colors } = useTheme();
   const styles = useThemedStyles(makeStyles);
-  const STATUS_COLOR = useMemo(() => STATUS_COLOR_FOR(colors), [colors]);
-  const STATUS_BORDER = useMemo(() => STATUS_BORDER_FOR(colors), [colors]);
   const router = useRouter();
   const { companies } = useCompanies();
   const [sortMode, setSortMode] = useState<SortMode>('deadline');
@@ -85,119 +83,137 @@ export default function HomeScreen() {
     }
   }, [companies, sortMode]);
 
+  // 並べ替え: iOS はアクションシート、それ以外は順に切り替える
+  const chooseSort = () => {
+    if (Platform.OS === 'ios') {
+      ActionSheetIOS.showActionSheetWithOptions(
+        {
+          title: '並べ替え',
+          options: [...SORT_OPTIONS.map(([, label]) => label), 'キャンセル'],
+          cancelButtonIndex: SORT_OPTIONS.length,
+        },
+        (i) => { if (i < SORT_OPTIONS.length) setSortMode(SORT_OPTIONS[i][0]); },
+      );
+      return;
+    }
+    const i = SORT_OPTIONS.findIndex(([m]) => m === sortMode);
+    setSortMode(SORT_OPTIONS[(i + 1) % SORT_OPTIONS.length][0]);
+  };
+
   const renderCompany = useCallback(({ item }: { item: Company }) => {
     const nd = nearestDeadline(item);
-    const sc = STATUS_COLOR[item.status] ?? STATUS_COLOR.active;
-    const borderColor = STATUS_BORDER[item.status] ?? colors.border;
+    const tone = toneColors(colors, companyStatusTone(item.status));
+    const days = nd ? daysUntil(selectionDate(nd)) : null;
+    const daysStr = days === null ? '' : days === 0 ? '今日' : days < 0 ? `${Math.abs(days)}日前` : `あと${days}日`;
+    const dTone = days === null ? null : daysTone(days);
+    const daysColor = dTone && dTone !== 'neutral' ? toneColors(colors, dTone).fg : colors.fgMuted;
 
     return (
       <TouchableOpacity
-        style={[styles.card, { borderLeftColor: borderColor }]}
+        style={styles.row}
         onPress={() => router.push(`/detail/${item.id}`)}
-        activeOpacity={0.75}
+        activeOpacity={0.6}
+        accessibilityRole="button"
       >
-        {/* 企業名・ステータス */}
-        <View style={styles.cardTop}>
-          <Text style={styles.cardName} numberOfLines={1}>{item.name}</Text>
-          <View style={[styles.badge, { backgroundColor: sc.bg }]}>
-            <Text style={[styles.badgeText, { color: sc.text }]}>{STATUS_LABEL[item.status]}</Text>
-          </View>
+        <View style={[styles.avatar, { backgroundColor: tone.bg }]}>
+          <Text style={[styles.avatarText, { color: tone.fg }]}>{companyInitial(item.name)}</Text>
         </View>
 
-        {/* 業界タグ */}
-        {item.industry ? (
-          <View style={styles.cardMeta}>
-            <View style={styles.tag}>
-              <Ionicons name="business-outline" size={11} color={colors.fgMuted} />
-              <Text style={styles.tagText}>{item.industry}</Text>
-            </View>
+        <View style={styles.rowBody}>
+          <Text style={styles.rowName} numberOfLines={1}>{item.name}</Text>
+          <Text style={styles.rowMeta} numberOfLines={1}>
+            <Text style={{ color: tone.fg, fontWeight: '600' }}>{STATUS_LABEL[item.status]}</Text>
+            {item.industry ? `  ·  ${item.industry}` : ''}
+          </Text>
+        </View>
+
+        {nd ? (
+          <View style={styles.rowRight}>
+            <Text style={[styles.rowDays, { color: daysColor }]}>{daysStr}</Text>
+            <Text style={styles.rowNext} numberOfLines={1}>
+              {nd.name} {formatDateShort(selectionDate(nd))}
+            </Text>
           </View>
         ) : null}
-
-        {/* 次の締め切り */}
-        {nd ? (() => {
-          const days = daysUntil(selectionDate(nd));
-          const daysStr =
-            days === 0 ? '今日！' : days < 0 ? `${Math.abs(days)}日前` : `あと${days}日`;
-          const dateColor =
-            days <= 3 ? colors.danger : days <= 7 ? colors.warning : colors.primary;
-          return (
-            <View style={styles.deadline}>
-              <Text style={styles.deadlineLabel}>次の締切</Text>
-              <Text style={styles.deadlineName} numberOfLines={1}>{nd.name}</Text>
-              <Text style={[styles.deadlineDate, { color: dateColor }]}>
-                {formatDateShort(selectionDate(nd))}（{daysStr}）
-              </Text>
-            </View>
-          );
-        })() : null}
       </TouchableOpacity>
     );
-  }, [router, colors, styles, STATUS_COLOR, STATUS_BORDER]);
+  }, [router, colors, styles]);
+
+  // 企業数の内訳（選考中・内定・不合格・その他=辞退）
+  const others = Math.max(0, stats.total - stats.active - stats.offer - stats.rejected);
+  const segments = [
+    { n: stats.active, color: colors.primary },
+    { n: stats.offer, color: colors.success },
+    { n: stats.rejected, color: colors.danger },
+    { n: others, color: colors.fgSub },
+  ].filter((s) => s.n > 0);
 
   const listHeader = (
     <View>
+      <LargeTitle
+        eyebrow={formatDateJa(todayStr())}
+        title="ホーム"
+        right={<IconButton icon="add" onPress={() => router.push('/add')} accessibilityLabel="企業を追加" size={40} />}
+      />
+
       <SyncBanner />
 
-      {/* 統計タイル */}
-      <View style={styles.statsRow}>
-        {[
-          { num: stats.total, label: '企業数', color: colors.fg },
-          { num: stats.active, label: '選考中', color: colors.primary },
-          { num: stats.offer, label: '内定', color: colors.success },
-          { num: stats.rejected, label: '不合格', color: colors.danger },
-        ].map(({ num, label, color }) => (
-          <View key={label} style={styles.statCard}>
-            <Text style={[styles.statNum, { color }]}>{num}</Text>
-            <Text style={styles.statLabel}>{label}</Text>
-          </View>
-        ))}
+      {/* 企業数の内訳 */}
+      <View style={styles.overview}>
+        <View style={styles.overviewTop}>
+          <Text style={styles.totalNum}>{stats.total}</Text>
+          <Text style={styles.totalUnit}>社を管理中</Text>
+        </View>
+        <View style={styles.pipeline}>
+          {segments.length === 0
+            ? <View style={[styles.pipeSeg, { flex: 1, backgroundColor: colors.surface }]} />
+            : segments.map((s, i) => (
+              <View key={i} style={[styles.pipeSeg, { flex: s.n, backgroundColor: s.color }]} />
+            ))}
+        </View>
+        <View style={styles.legend}>
+          {[
+            { num: stats.active, label: '選考中', color: colors.primary },
+            { num: stats.offer, label: '内定', color: colors.success },
+            { num: stats.rejected, label: '不合格', color: colors.danger },
+          ].map(({ num, label, color }) => (
+            <View key={label} style={styles.legendItem}>
+              <View style={styles.legendLabelRow}>
+                <View style={[styles.legendDot, { backgroundColor: color }]} />
+                <Text style={styles.legendLabel}>{label}</Text>
+              </View>
+              <Text style={styles.legendNum}>{num}<Text style={styles.legendUnit}> 社</Text></Text>
+            </View>
+          ))}
+        </View>
       </View>
 
-      {/* ④ 今日やること / 近日中の選考 */}
+      {/* 今日やること / 近日中の選考 */}
       <TodaySection />
       <UpcomingSection />
 
       {/* 企業一覧 */}
-      <Text style={styles.listTitle}>企業一覧</Text>
-
-      {/* 並べ替えチップ */}
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        style={styles.sortScroll}
-        contentContainerStyle={styles.sortContent}
-      >
-        {(
-          [
-            ['deadline', '締め切り順'],
-            ['industry', '業界別'],
-            ['company', '企業名順'],
-            ['status', 'ステータス'],
-          ] as [SortMode, string][]
-        ).map(([mode, label]) => (
+      {companies.length > 0 && (
+        <View style={styles.listHead}>
+          <Text style={styles.listTitle}>企業一覧</Text>
           <TouchableOpacity
-            key={mode}
-            style={[styles.chip, sortMode === mode && styles.chipActive]}
-            onPress={() => setSortMode(mode)}
+            style={styles.sortBtn}
+            onPress={chooseSort}
+            activeOpacity={0.6}
+            hitSlop={8}
+            accessibilityRole="button"
+            accessibilityLabel="並べ替え"
           >
-            <Text style={[styles.chipText, sortMode === mode && styles.chipTextActive]}>
-              {label}
-            </Text>
+            <Text style={styles.sortText}>{SORT_OPTIONS.find(([m]) => m === sortMode)?.[1]}</Text>
+            <Ionicons name="chevron-down" size={15} color={colors.fg} />
           </TouchableOpacity>
-        ))}
-      </ScrollView>
+        </View>
+      )}
     </View>
   );
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
-      {/* ヘッダー */}
-      <View style={styles.header}>
-        <Text style={styles.title}>ホーム</Text>
-      </View>
-
-      {/* 企業リスト */}
       <FlatList
         data={sorted}
         keyExtractor={(item) => item.id}
@@ -205,112 +221,59 @@ export default function HomeScreen() {
         ListHeaderComponent={listHeader}
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.listContent}
-        ItemSeparatorComponent={() => <View style={{ height: 10 }} />}
+        ItemSeparatorComponent={() => <View style={styles.separator} />}
         ListEmptyComponent={
-          <View style={styles.empty}>
-            <Text style={styles.emptyIcon}>📋</Text>
-            <Text style={styles.emptyTitle}>企業がまだありません</Text>
-            <Text style={styles.emptySub}>右下の「＋」ボタンから就活先の企業を追加しましょう</Text>
-          </View>
+          <EmptyState
+            icon="briefcase-outline"
+            title="企業がまだありません"
+            message="右上の「＋」ボタンから就活先の企業を追加しましょう"
+          >
+            <View style={{ marginTop: 12, alignSelf: 'stretch', paddingHorizontal: 40 }}>
+              <PrimaryButton label="企業を追加" icon="add" onPress={() => router.push('/add')} />
+            </View>
+          </EmptyState>
         }
       />
-
-      {/* FAB */}
-      <TouchableOpacity
-        style={styles.fab}
-        onPress={() => router.push('/add')}
-        activeOpacity={0.85}
-      >
-        <Ionicons name="add" size={30} color="#fff" />
-      </TouchableOpacity>
     </SafeAreaView>
   );
 }
 
 const makeStyles = (colors: Colors) => StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bg },
+  listContent: { ...readable, paddingHorizontal: spacing.screen, paddingBottom: spacing.tabBar },
 
-  header: { paddingHorizontal: spacing.md, paddingTop: spacing.sm, paddingBottom: 12 },
-  title: { fontSize: 26, fontWeight: '700', color: colors.fg, letterSpacing: -0.5 },
+  overview: { marginBottom: spacing.section },
+  overviewTop: { flexDirection: 'row', alignItems: 'baseline', gap: 6, marginBottom: 12 },
+  totalNum: { ...type.number, fontSize: 40, lineHeight: 46, color: colors.fg },
+  totalUnit: { fontSize: 15, fontWeight: '600', color: colors.fgMuted },
+  pipeline: {
+    flexDirection: 'row', height: 10, borderRadius: 5, overflow: 'hidden', gap: 2,
+    marginBottom: 14,
+  },
+  pipeSeg: { height: '100%' },
+  legend: { flexDirection: 'row' },
+  legendItem: { flex: 1 },
+  legendLabelRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  legendDot: { width: 8, height: 8, borderRadius: 4 },
+  legendLabel: { fontSize: 13, color: colors.fgMuted },
+  legendNum: { ...type.number, fontSize: 20, color: colors.fg, marginTop: 4 },
+  legendUnit: { fontSize: 13, fontWeight: '500', color: colors.fgMuted },
 
-  statsRow: {
-    flexDirection: 'row',
-    gap: 10,
-    marginBottom: 16,
+  listHead: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4,
   },
-  statCard: {
-    flex: 1,
-    backgroundColor: colors.surface,
-    borderRadius: radius.md,
-    paddingVertical: 12,
-    alignItems: 'center',
-    ...shadow,
-  },
-  statNum: { fontSize: 22, fontWeight: '700' },
-  statLabel: { fontSize: 11, color: colors.fgMuted, marginTop: 2 },
+  listTitle: { ...type.headline, color: colors.fg },
+  sortBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingVertical: 6 },
+  sortText: { fontSize: 14, fontWeight: '700', color: colors.fg },
 
-  sortScroll: { flexGrow: 0, flexShrink: 0, marginBottom: 12, marginHorizontal: -spacing.md },
-  listTitle: { fontSize: 17, fontWeight: '700', color: colors.fg, marginBottom: 10 },
-  sortContent: { paddingHorizontal: spacing.md, gap: 8, alignItems: 'center' },
-  chip: {
-    paddingHorizontal: 16,
-    paddingVertical: 7,
-    borderRadius: radius.full,
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  chipActive: { backgroundColor: colors.primaryLight, borderColor: colors.primary },
-  chipText: { fontSize: 13, fontWeight: '500', color: colors.fgMuted },
-  chipTextActive: { color: colors.primary, fontWeight: '600' },
-
-  listContent: { paddingHorizontal: spacing.md, paddingBottom: 100 },
-  card: {
-    backgroundColor: colors.surface,
-    borderRadius: radius.md,
-    padding: spacing.md,
-    borderLeftWidth: 4,
-    ...shadow,
-  },
-  cardTop: { flexDirection: 'row', alignItems: 'flex-start', gap: 10, marginBottom: 6 },
-  cardName: { flex: 1, fontSize: 16, fontWeight: '700', color: colors.fg },
-  badge: { paddingHorizontal: 10, paddingVertical: 3, borderRadius: radius.full },
-  badgeText: { fontSize: 11, fontWeight: '600' },
-  cardMeta: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 },
-  tag: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  tagText: { fontSize: 12, color: colors.fgMuted },
-  deadline: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginTop: 8,
-    backgroundColor: colors.surface2,
-    borderRadius: radius.sm,
-    padding: spacing.sm,
-  },
-  deadlineLabel: { fontSize: 11, color: colors.fgSub },
-  deadlineName: { flex: 1, fontSize: 12, fontWeight: '600', color: colors.fg },
-  deadlineDate: { fontSize: 12, fontWeight: '600' },
-
-  empty: { alignItems: 'center', paddingVertical: 80, gap: 12 },
-  emptyIcon: { fontSize: 56, marginBottom: 8 },
-  emptyTitle: { fontSize: 18, fontWeight: '700', color: colors.fg },
-  emptySub: { fontSize: 15, lineHeight: 24, color: colors.fgMuted, textAlign: 'center', paddingHorizontal: 40 },
-
-  fab: {
-    position: 'absolute',
-    bottom: 24,
-    right: 20,
-    width: 58,
-    height: 58,
-    borderRadius: 29,
-    backgroundColor: colors.primary,
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: colors.primary,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.4,
-    shadowRadius: 12,
-    elevation: 8,
-  },
+  row: { flexDirection: 'row', alignItems: 'center', gap: 14, paddingVertical: 12, minHeight: 68 },
+  avatar: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center' },
+  avatarText: { fontSize: 17, fontWeight: '800' },
+  rowBody: { flex: 1, minWidth: 0 },
+  rowName: { fontSize: 16, fontWeight: '700', color: colors.fg },
+  rowMeta: { fontSize: 13, color: colors.fgMuted, marginTop: 3 },
+  rowRight: { alignItems: 'flex-end', maxWidth: 130 },
+  rowDays: { fontSize: 15, fontWeight: '800', fontVariant: ['tabular-nums'] },
+  rowNext: { fontSize: 12, color: colors.fgMuted, marginTop: 3 },
+  separator: { height: StyleSheet.hairlineWidth, backgroundColor: colors.border, marginLeft: 58 },
 });
